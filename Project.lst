@@ -1,0 +1,1966 @@
+Microsoft (R) Macro Assembler Version 14.14.26428.1	    06/07/18 08:17:39
+zmijica.asm						     Page 1 - 1
+
+
+				COMMENT &
+				/*****************************************************************
+				           ****** IGRICA ZMIJICE ******
+
+				Napisana koristeci Irvine32.inc biblioteku i Irvine-ove
+				preporuke za modele koji se koriste i velicinu steka za rad
+				u VS2017.
+				Na samom pocetku korisnika docekuje interaktivni WELCOME meni
+				u kom se vrsi izbor brzine kretanja zmijice, prilika da se 
+				pokrene igra sa default vrednoscu brzine i opcija za napustanje
+				igrice.
+				U bilo kom trenutku tokom igranja moguce je napustiti igricu
+				pritiskom na ESC dugme, cime se korisnik vraca na WELCOME meni
+				gde se moze izabrati opcija za konacan izlazak iz igre.
+
+				Kod i logika igrice su isparcani na najsitnije logicke celine
+				grupisane u labele i procedure, kako bi krajnje upravljanje bilo
+				jednostavno. Svaka procedura odradjuje pipav deo posla koji joj
+				je prepusten, tako da je detaljisanje u main proceduri minimalno,
+				bez guzve i necitkosti.
+				*****************************************************************/&
+
+				include Irvine32.inc
+			      C ; Include file for Irvine32.lib             (Irvine32.inc)
+			      C 
+			      C ;OPTION CASEMAP:NONE		; optional: make identifiers case-sensitive
+			      C 
+			      C INCLUDE SmallWin.inc		; MS-Windows prototypes, structures, and constants
+			      C .NOLIST
+			      C .LIST
+			      C 
+			      C INCLUDE VirtualKeys.inc
+			      C ; VirtualKeys.inc
+			      C .NOLIST
+			      C .LIST
+			      C 
+			      C 
+			      C .NOLIST
+			      C .LIST
+			      C 
+				include macros.inc
+			      C .NOLIST
+			      C .LIST
+			      C 
+
+				.386
+				.model flat, stdcall
+zmijica.asm(27) : warning A4011:multiple .MODEL directives found : .MODEL ignored
+				.stack 4096
+				ExitProcess proto, dwExitCode:dword
+				
+ 00000000			.const
+					;// Definisanje velicine prozora 
+ = 00000000				xmin = 0	;// leva ivica
+ = 0000004F				xmax = 79	;// desna ivica
+ = 00000000				ymin = 0	;// gornja ivica
+ = 00000018				ymax = 24	;// donja ivica
+				
+					;// Oznake za levo, desno, gore, dole, ESC, ASCII
+ = 00000025				LEFT_KEY = 025h        
+ = 00000026				UP_KEY = 026h
+ = 00000027				RIGHT_KEY = 027h
+ = 00000028				DOWN_KEY = 028h
+ = 0000001B				ESC_KEY = 01Bh
+					
+					;// Definisanje pocetnih koordinata zmijice i pocetnog smera kretanja
+					;// Valja blago prepraviti kod u initSnake kako bi se zmija postavila
+					;// vertikalno, umesto horizontalno, kao sto je trenutno.
+ = 00000028				headX_default = 40d
+ = 0000000C				headY_default = 12d
+ = 00000025				tailX_default = 37d
+ = 0000000C				tailY_default = 12d
+ = 00000052				direction_default = 'R'		;// R-right, U-up, D-down, L-left
+				
+ 00000000			.data
+					;// Stringovi za ispis WELCOME screena i izbor brzine zmijice
+
+ 00000000 20 20 5F 5F 5F		T1 byte  "  _______            _    _     _               _  ", 0dh, 0ah, 0
+	   5F 5F 5F 5F 20
+	   20 20 20 20 20
+	   20 20 20 20 20
+	   20 5F 20 20 20
+	   20 5F 20 20 20
+	   20 20 5F 20 20
+	   20 20 20 20 20
+	   20 20 20 20 20
+	   20 20 20 5F 20
+	   20 0D 0A 00
+ 00000036 20 7C 5F 5F 5F		T2 byte  " |_____  |          (_)  (_)   (_)             | | ", 0dh, 0ah, 0
+	   5F 5F 20 20 7C
+	   20 20 20 20 20
+	   20 20 20 20 20
+	   28 5F 29 20 20
+	   28 5F 29 20 20
+	   20 28 5F 29 20
+	   20 20 20 20 20
+	   20 20 20 20 20
+	   20 20 7C 20 7C
+	   20 0D 0A 00
+ 0000006C 20 20 20 20 20		T3 byte  "      / / _ __  __   _  ______  _   ____  __ _ | | ", 0dh, 0ah, 0
+	   20 2F 20 2F 20
+	   5F 20 5F 5F 20
+	   20 5F 5F 20 20
+	   20 5F 20 20 5F
+	   5F 5F 5F 5F 5F
+	   20 20 5F 20 20
+	   20 5F 5F 5F 5F
+	   20 20 5F 5F 20
+	   5F 20 7C 20 7C
+	   20 0D 0A 00
+ 000000A2 20 20 20 20 20		T4 byte  "     / / | '_ \/_ \ | ||____  || | / __/ / _` || | ", 0dh, 0ah, 0
+	   2F 20 2F 20 7C
+	   20 27 5F 20 5C
+	   2F 5F 20 5C 20
+	   7C 20 7C 7C 5F
+	   5F 5F 5F 20 20
+	   7C 7C 20 7C 20
+	   2F 20 5F 5F 2F
+	   20 2F 20 5F 60
+	   20 7C 7C 20 7C
+	   20 0D 0A 00
+ 000000D8 20 20 20 20 2F		T5 byte  "    / /  | | | | | || |     | || || (__ | (_| || | ", 0dh, 0ah, 0
+	   20 2F 20 20 7C
+	   20 7C 20 7C 20
+	   7C 20 7C 20 7C
+	   7C 20 7C 20 20
+	   20 20 20 7C 20
+	   7C 7C 20 7C 7C
+	   20 28 5F 5F 20
+	   7C 20 28 5F 7C
+	   20 7C 7C 20 7C
+	   20 0D 0A 00
+ 0000010E 20 20 20 2F 20		T6 byte  "   / /   |_| |_| |_||_| _   | ||_| \___\ \__,_|| | ", 0dh, 0ah, 0
+	   2F 20 20 20 7C
+	   5F 7C 20 7C 5F
+	   7C 20 7C 5F 7C
+	   7C 5F 7C 20 5F
+	   20 20 20 7C 20
+	   7C 7C 5F 7C 20
+	   5C 5F 5F 5F 5C
+	   20 5C 5F 5F 2C
+	   5F 7C 7C 20 7C
+	   20 0D 0A 00
+ 00000144 20 20 7C 20 20		T7 byte  "  |  |________________ | |__/ /_______________ |_| ", 0dh, 0ah, 0
+	   7C 5F 5F 5F 5F
+	   5F 5F 5F 5F 5F
+	   5F 5F 5F 5F 5F
+	   5F 5F 20 7C 20
+	   7C 5F 5F 2F 20
+	   2F 5F 5F 5F 5F
+	   5F 5F 5F 5F 5F
+	   5F 5F 5F 5F 5F
+	   5F 20 7C 5F 7C
+	   20 0D 0A 00
+ 0000017A 20 20 7C 5F 5F		T8 byte  "  |___________________\\_____//_______________|(_) ", 0dh, 0ah, 0
+	   5F 5F 5F 5F 5F
+	   5F 5F 5F 5F 5F
+	   5F 5F 5F 5F 5F
+	   5F 5F 5C 5C 5F
+	   5F 5F 5F 5F 2F
+	   2F 5F 5F 5F 5F
+	   5F 5F 5F 5F 5F
+	   5F 5F 5F 5F 5F
+	   5F 7C 28 5F 29
+	   20 0D 0A 00
+
+
+ 000001B0 20 0D 0A 31 2E		welcomeString byte  " ", 0dh, 0ah,
+	   20 50 6F 63 65
+	   74 61 6B 20 69
+	   67 72 65 0D 0A
+	   32 2E 20 49 7A
+	   62 6F 72 20 62
+	   72 7A 69 6E 65
+	   0D 0A 33 2E 20
+	   49 7A 6C 61 7A
+	   0D 0A 00
+										"1. Pocetak igre", 0dh, 0ah,
+										"2. Izbor brzine", 0dh, 0ah,
+										"3. Izlaz", 0dh, 0ah, 0
+										;//"4. Izbor igralista", 0dh, 0ah,0
+
+ 000001E0 20 0D 0A 20 0D		copyright byte " ", 0dh, 0ah, " ", 0dh, 0ah, " ", 0dh, 0ah, " ", 0dh, 0ah,
+	   0A 20 0D 0A 20
+	   0D 0A 20 0D 0A
+	   20 0D 0A 20 0D
+	   0A 20 0D 0A 20
+	   0D 0A 09 09 09
+	   09 09 43 6F 70
+	   79 6C 65 66 74
+	   20 62 79 20 44
+	   72 61 67 61 6E
+	   20 42 6F 7A 69
+	   6E 6F 76 69 63
+	   20 32 31 31 2F
+	   32 30 31 35 0D
+	   0A 09 09 09 09
+	   09 09 20 20 20
+	   20 4B 72 69 73
+	   74 69 6A 61 6E
+	   20 4D 69 74 72
+	   6F 76 69 63 20
+	   32 31 34 2F 32
+	   30 31 35 0D 0A
+	   00
+								   " ", 0dh, 0ah, " ", 0dh, 0ah, " ", 0dh, 0ah, " ", 0dh, 0ah,
+								   " ", 0dh, 0ah, 
+								   "					Copyleft by Dragan Bozinovic 211/2015", 0dh, 0ah,
+								   "						    Kristijan Mitrovic 214/2015", 0dh, 0ah, 0
+										
+				
+ 0000024F 49 7A 62 6F 72		levelString  byte "Izbor nivoa:", 0dh, 0ah,
+	   20 6E 69 76 6F
+	   61 3A 0D 0A 31
+	   2E 20 42 65 73
+	   6B 6F 6E 61 63
+	   6E 6F 20 EC 0D
+	   0A 20 20 20 20
+	   20 20 20 20 20
+	   20 20 5F 5F 20
+	   0D 0A 32 2E 20
+	   4B 75 74 69 6A
+	   61 20 7C 5F 5F
+	   7C 0D 0A 00
+									  "1. Beskonacno ", 236, 0dh, 0ah,
+									  "           __ ", 0dh, 0ah,
+									  "2. Kutija |__|", 0dh, 0ah,0
+				
+ 0000028F 49 7A 62 6F 72		speedString  byte "Izbor brzine:", 0dh, 0ah,
+	   20 62 72 7A 69
+	   6E 65 3A 0D 0A
+	   31 2E 20 44 65
+	   63 69 6A 65 20
+	   2D 2E 2D 0D 0A
+	   32 2E 20 4E 6F
+	   72 6D 61 6C 6E
+	   6F 20 4F 2E 4F
+	   0D 0A 33 2E 20
+	   4E 61 70 72 65
+	   64 6E 6F 20 5C
+	   30 2E 30 2F 0D
+	   0A 34 2E 20 4C
+	   75 64 69 6C 6F
+	   6F 6F 6F 21 0D
+	   0A 00
+									  "1. Decije -.-", 0dh, 0ah,
+									  "2. Normalno O.O", 0dh, 0ah,
+									  "3. Napredno \0.0/", 0dh, 0ah,
+									  "4. Ludiloooo!", 0dh, 0ah, 0
+				
+ 000002E1 47 61 6D 65 20		gameOverString byte "Game Over!", 0
+	   4F 76 65 72 21
+	   00
+				
+ 000002EC 53 63 6F 72 65		scoreString  byte "Score: 0", 0
+	   3A 20 30 00
+				
+ 000002F5 47 41 4D 45 20		yourScoreString byte "GAME OVER! Vas score je ", 0
+	   4F 56 45 52 21
+	   20 56 61 73 20
+	   73 63 6F 72 65
+	   20 6A 65 20 00
+				
+					;// Promenljive koriscene u programu
+ 0000030E  00000780 [			frameBuffer word 1920 dup(0)	;// Frejmbafer u kom se pamte stanja svakog od
+	    0000
+	   ]
+													;// 24*80 polja u konzoli, medju kojima su prazna
+													;// polja predstavljena nulama, sama zmijica i 
+													;// hrana i eventualni zidovi
+				
+ 0000120E 0C				headY byte headY_default        ;// Y koordinata glave zmije
+ 0000120F 28				headX byte headX_default        ;// X koordinata glave zmije
+ 00001210 0C				tailY byte tailY_default        ;// Y koordinata repa zmije
+ 00001211 25				tailX byte tailX_default        ;// X koordinata repa zmije
+ 00001212 00				foodY byte ?					;// Y koordinata hrane
+ 00001213 00				foodX byte ?					;// X koordinata hrane
+				
+ 00001214 52				currDirection byte direction_default	;// Trenutni smer kretanja zmije
+ 00001215 52				newDirection byte direction_default		;// Zeljeni smer kretanja koji je uneo igrac
+ 00001216 00000064			snakeSpeed dword 100					;// Brzina zmijice koja je zapravo period sa kojim se osvezava iscrtavanje na ekranu
+				
+ 0000121A 00				tempY byte 0         ;// Pomocna promenljiva za smestanje Y koordinate
+ 0000121B 00				tempX byte 0         ;// Pomocna promenljiva za smestanje X koordinate
+				
+ 0000121C 00				Yabove byte 0d          ;// Red iznad trenutnog
+ 0000121D 00				Xleft byte 0d           ;// Kolona levo od trenutne
+ 0000121E 00				Ybelow byte 0d          ;// Red ispod trenutnog
+ 0000121F 00				Xright byte 0d          ;// Kolona desno od trenutne
+				
+ 00001220 01				flag_tail byte 1d		;// Fleg koji oznacava da li rep treba da bude obrisan ili ne
+ 00001221 0000				search word 0d			;// Vrednost sledeceg segmenta zmijice koji se iscrtava
+ 00001223 00				flag_endTheGame byte 0d ;// Fleg koji oznacava da li igra treba da se prekine
+ 00001224 00000000			playerScore dword 0d	;// Total score
+ 00001228 00000064			welcomeDelay dword 100
+				
+ 0000122C 0000 0000 004F		windowRect SMALL_RECT <xmin, ymin, xmax, ymax>      ;// Velicina prozora
+	   0018
+ 00001234 5A 6D 69 6A 69		winTitle byte "Zmijica", 0							;// Naslov programa
+	   63 61 00
+ 0000123C 00000000			cursorInfo CONSOLE_CURSOR_INFO <>					;// Informacije o kursoru
+	   00000000
+
+
+ 00000000			.data?
+					;// Promenljive koje su potrebne za hendlovanje podataka unetih u konzolu tj. interakciju sa korisnikom
+ 00000000 00000000			stdOutHandle handle ?
+ 00000004 00000000			stdInHandle handle ?		;// Promenljiva za kontrolu inputa u konzolu
+ 00000008 00000000			numInp dword ?				;// Broj bajtova u ulaznom baferu
+ 0000000C  00000010 [			temp byte 16 dup(?)			;// Promenljiva koja sadrzi podatke tipa INPUT_RECORD
+	    00
+	   ]
+ 0000001C 00000000			bRead dword ?				;// Broj procitanih ulaznih bajtova
+				
+				
+ 00000000			.code
+				;// -----------------------------------------------------------------------------------------------------------
+				;// main procedura koja postavlja WELCOME screen, hendluje izbor brzine zmijice
+				;// i prosledjuje podprocedurama inicijalizaciju ekrana za pocetak igre, postavljanje
+				;// pocetne zmijice na sredinu ekrana, generisanje hrane na nasumicnom mestu i poziva
+				;// najvazniju proceduru startGame koja prati komande koje zadaje korisnik i kontrolise
+				;// kretanje zmijice.
+				;// Zbog pozivanja silnih procedura koje svaka za sebe obavljaju deo posla, interfejs
+				;// u main proceduri je prilicno jednostavan, na stranu to sto je potreban veliki
+				;// broj komandi za obavljanje nekih jednostavnih funkcija, sto nije slucaj sa nekim
+				;// visim programskim jezikom.
+				;// -----------------------------------------------------------------------------------------------------------
+				
+ 00000000			main PROC
+				
+					invoke GetStdHandle, STD_OUTPUT_HANDLE							 ;// Postavlja handle za ispis podataka
+ 00000000  6A F5	   *	    push    -00000000Bh
+ 00000002  E8 00000000 E   *	    call   GetStdHandle
+ 00000007  A3 00000000 R	    mov  stdOutHandle, eax
+
+				    invoke GetConsoleCursorInfo, stdOutHandle, addr cursorInfo       ;// Cita trenutno stanje kursora
+ 0000000C  68 0000123C R   *	    push   OFFSET cursorInfo
+ 00000011  FF 35 00000000 R *	    push   stdOutHandle
+ 00000017  E8 00000000 E   *	    call   GetConsoleCursorInfo
+ 0000001C  C7 05 00001240 R	    mov  cursorInfo.bVisible, 0										 ;// Postavlja vidljivost kursora na nevidljiv
+	   00000000
+				    invoke SetConsoleCursorInfo, stdOutHandle, addr cursorInfo       ;// Postavlja novo stanje kursora
+ 00000026  68 0000123C R   *	    push   OFFSET cursorInfo
+ 0000002B  FF 35 00000000 R *	    push   stdOutHandle
+ 00000031  E8 00000000 E   *	    call   SetConsoleCursorInfo
+
+				    invoke SetConsoleTitle, addr winTitle							 ;// Postavlja title prozora
+ 00000036  68 00001234 R   *	    push   OFFSET winTitle
+ 0000003B  E8 00000000 E   *	    call   SetConsoleTitleA
+				    invoke SetConsoleWindowInfo, stdOutHandle, TRUE, addr windowRect ;// Dimenzije prozora
+ 00000040  68 0000122C R   *	    push   OFFSET windowRect
+ 00000045  6A 01	   *	    push   +000000001h
+ 00000047  FF 35 00000000 R *	    push   stdOutHandle
+ 0000004D  E8 00000000 E   *	    call   SetConsoleWindowInfo
+ 00000052  B8 00000002		    mov eax, green + (black * 16)									 ;// Boja interfejsa i prozora. Upisuju se u al i ah registre, zato je zapis ovakav
+ 00000057  E8 00000000 E	    call SetTextColor      
+				
+ 0000005C			    menu:
+ 0000005C  E8 00000000 E	    call Randomize						;// Postavlja seme za randomizaciju, slicno C-ovskoj logici
+ 00000061  E8 00000000 E	    call clrscr							;// Brise ekran konzole	
+ 00000066  E8 000000FE			call welcomeZmijica					;// Ispis velikog stilizovanog ZMIJICA
+ 0000006B  BA 000001B0 R	    mov edx, offset welcomeString       
+ 00000070  E8 00000000 E	    call WriteString					;// Ispis menija
+ 00000075  BA 000001E0 R		mov edx, offset copyright
+ 0000007A  E8 00000000 E		call WriteString
+				
+ 0000007F			    welcomeLoop:                    ;// Loopovanje kroz WELCOME meni dok se ne unese
+												    ;// pravilan izbor
+ 0000007F  E8 00000000 E			call ReadChar
+				
+ 00000084  3C 31				cmp al, '1'                 ;// 1. Pocni igricu
+ 00000086  0F 84 000000AB			je initializeGame
+				
+ 0000008C  3C 32				cmp al, '2'                 ;// 2. Izbor brzine
+ 0000008E  74 45				je speed
+				
+						;//cmp al, '4'                 ;// 4. Izbor tipa igralista
+						;//je level
+				
+ 00000090  3C 33				cmp al, '3'                 ;// 3. Izlazak iz programa
+ 00000092  75 EB				jne welcomeLoop             ;// Ili se vrti dok se ne unese ispravan izbor
+				                               
+						EXIT
+ 00000094  6A 00	   *	    push   +000000000h
+ 00000096  E8 00000000 E   *	    call   ExitProcess
+				
+					
+ 0000009B			    level:							;// Meni za izbor nivoa, tj. tipa igralista
+ 0000009B  E8 00000000 E			call clrscr                 
+ 000000A0  BA 0000024F R			mov edx, offset levelString      
+ 000000A5  E8 00000000 E			call WriteString            ;// Ispis menija za izbor nivoa
+				
+ 000000AA					loopLevel:                      ;// Loopovanje kroz meni za izbor nivoa
+ 000000AA  E8 00000000 E				call ReadChar
+				
+ 000000AF  3C 31					cmp al, '1'                 ;// 1. Beskonacno igraliste bez granica
+ 000000B1  74 06					je levelBeskonacno
+				
+ 000000B3  3C 32					cmp al, '2'                 ;// 2. Ogradjeno igraliste
+ 000000B5  74 10					je levelKutija
+				
+ 000000B7  EB F1					jmp loopLevel                   
+				
+ 000000B9					levelBeskonacno:                     
+ 000000B9  E8 00000185					call clearMem               ;// Brise frejmbafer i resetuje sve flegove
+ 000000BE  B0 01					mov al, 1                   ;// Postavlja fleg za generisanje nivoa u al i skace
+ 000000C0  E8 0000083A					call generateLevel          ;// na proceduru koja generise nivo
+ 000000C5  EB 95					jmp menu
+				
+ 000000C7					levelKutija:                    
+ 000000C7  E8 00000177					call clearMem               
+ 000000CC  B0 02					mov al, 2                   
+ 000000CE  E8 0000082C					call generateLevel              
+ 000000D3  EB 87					jmp menu
+						
+					
+				
+				
+ 000000D5			    speed:							;// Meni za izbor brzine
+ 000000D5  E8 00000000 E			call clrscr                 
+ 000000DA  BA 0000028F R			mov edx, offset speedString      
+ 000000DF  E8 00000000 E			call WriteString            ;// Ispis menija za izbor brzine
+				
+ 000000E4					loopSpeed:                      ;// Loopovanje kroz meni za izbor brzine
+ 000000E4  E8 00000000 E				call ReadChar
+				
+ 000000E9  3C 31					cmp al, '1'                 ;// Decije
+ 000000EB  74 0E					je speed1
+				
+ 000000ED  3C 32					cmp al, '2'                 ;// Normalno
+ 000000EF  74 19					je speed2
+				
+ 000000F1  3C 33					cmp al, '3'                 ;// Napredno
+ 000000F3  74 24					je speed3
+				
+ 000000F5  3C 34					cmp al, '4'                 ;// Ludilo
+ 000000F7  74 2F					je speed4
+				
+ 000000F9  EB E9					jmp loopSpeed
+				
+ 000000FB					speed1:                     ;// Brzina zmijice odredjena je refresh rate-om
+ 000000FB  C7 05 00001216 R				mov snakeSpeed, 150
+	   00000096
+ 00000105  E9 FFFFFF52					jmp menu
+				
+ 0000010A					speed2:                     
+ 0000010A  C7 05 00001216 R				mov snakeSpeed, 100
+	   00000064
+ 00000114  E9 FFFFFF43					jmp menu
+				
+ 00000119					speed3:
+ 00000119  C7 05 00001216 R				mov snakeSpeed, 50             
+	   00000032
+ 00000123  E9 FFFFFF34					jmp menu
+				
+ 00000128					speed4:
+ 00000128  C7 05 00001216 R				mov snakeSpeed, 35            
+	   00000023
+ 00000132  E9 FFFFFF25					jmp menu                    ;// Povratak na glavni meni po izboru brzine
+				
+				
+ 00000137			    initializeGame:                     ;// Postavlja flegove potrebne za generisanje
+														;// zmijice i hrane i poziva glavnu proceduru
+														;// startGame koja hendluje samu igru
+ 00000137  B8 00000000				mov eax, 0						;// Ciscenje registara
+ 0000013C  BA 00000000				mov edx, 0
+ 00000141  E8 00000000 E			call clrscr						
+ 00000146  E8 000000BF				call initSnake					;// Postavlja zmiju na pocetnu poziciju
+ 0000014B  E8 0000072F				call Paint						;// Iscrtava igraliste na kom se nalazi zmija
+ 00000150  E8 0000068A				call createFood					;// Postavlja hranu na nasumicno mesto na ekranu
+ 00000155  E8 00000155				call startGame					;// Poziv glavne funkcije za pokretanje igre
+				
+ 0000015A  B8 00000002				mov eax, green + (black * 16)	;// Ako je procedura startGame zavrsila posao, to znaci
+ 0000015F  E8 00000000 E			call SetTextColor				;// da je iz nekog razloga (sudar ili ESC) kraj igre
+ 00000164  E9 FFFFFEF3				jmp menu						;// i igrac se vraca na pocetni meni
+				
+ 00000169			main ENDP
+				;// --------------------------------------------------------------------------------------------
+				
+ 00000169			welcomeZmijica PROC			;// Iscrtava veliko stilizovano Zmijica na WELCOME screen
+				
+ 00000169  BA 00000000 R		mov edx, offset T1
+ 0000016E  E8 00000000 E		call WriteString
+ 00000173  A1 00001228 R		mov eax, welcomeDelay
+ 00000178  E8 00000000 E		call delay
+ 0000017D  BA 00000036 R		mov edx, offset T2
+ 00000182  E8 00000000 E		call WriteString
+ 00000187  A1 00001228 R		mov eax, welcomeDelay
+ 0000018C  E8 00000000 E		call delay
+ 00000191  BA 0000006C R		mov edx, offset T3
+ 00000196  E8 00000000 E		call WriteString
+ 0000019B  A1 00001228 R		mov eax, welcomeDelay
+ 000001A0  E8 00000000 E		call delay
+ 000001A5  BA 000000A2 R		mov edx, offset T4
+ 000001AA  E8 00000000 E		call WriteString
+ 000001AF  A1 00001228 R		mov eax, welcomeDelay
+ 000001B4  E8 00000000 E		call delay
+ 000001B9  BA 000000D8 R		mov edx, offset T5
+ 000001BE  E8 00000000 E		call WriteString
+ 000001C3  A1 00001228 R		mov eax, welcomeDelay
+ 000001C8  E8 00000000 E		call delay
+ 000001CD  BA 0000010E R		mov edx, offset T6
+ 000001D2  E8 00000000 E		call WriteString
+ 000001D7  A1 00001228 R		mov eax, welcomeDelay
+ 000001DC  E8 00000000 E		call delay
+ 000001E1  BA 00000144 R		mov edx, offset T7
+ 000001E6  E8 00000000 E		call WriteString
+ 000001EB  A1 00001228 R		mov eax, welcomeDelay
+ 000001F0  E8 00000000 E		call delay
+ 000001F5  BA 0000017A R		mov edx, offset T8
+ 000001FA  E8 00000000 E		call WriteString
+ 000001FF  A1 00001228 R		mov eax, welcomeDelay
+ 00000204  E8 00000000 E		call delay
+				
+ 00000209  C3				RET
+ 0000020A			welcomeZmijica ENDP
+				
+				
+ 0000020A			initSnake PROC USES ebx edx	   ;// Postavlja zmijicu duzine 4 polja na koordinate definisane sa headX/Y_default
+												
+ 0000020A  53		   *	    push   ebx
+ 0000020B  52		   *	    push   edx
+ 0000020C  B6 0C		    mov dh, headY_default      ;// Y pozicija glave
+ 0000020E  B2 28		    mov dl, headX_default      ;// X pozicija glave
+ 00000210  66| BB 0001		    mov bx, 1				   ;// To je prvi segment zmijice (glava) koji se upisuje u bx 
+ 00000214  E8 0000063B		    call saveIndex			   ;// a potom pamti u frejmbaferu preko saveIndex procedure
+				
+ 00000219  B6 0C		    mov dh, headY_default	   ;// Y pozicija vratnog dela
+ 0000021B  B2 27		    mov dl, headX_default - 1  ;// X pozicija vratnog dela
+ 0000021D  66| BB 0002		    mov bx, 2				   ;// Drugi segment zmije (vrat)
+ 00000221  E8 0000062E		    call saveIndex  
+				
+ 00000226  B6 0C		    mov dh, headY_default	   ;// Y pozicija kicmenog dela
+ 00000228  B2 26		    mov dl, headX_default - 2  ;// X pozicija kicmenog dela
+ 0000022A  66| BB 0003		    mov bx, 3				   ;// Treci segment zmije (kicma)
+ 0000022E  E8 00000621		    call saveIndex 
+				
+ 00000233  B6 0C		    mov dh, headY_default	   ;// Y pozicija repa
+ 00000235  B2 25		    mov dl, headX_default - 3  ;// X pozicija repa
+ 00000237  66| BB 0004		    mov bx, 4				   ;// Cetvrti segment zmije (rep)
+ 0000023B  E8 00000614		    call saveIndex 
+				
+				    RET
+ 00000240  5A		   *	    pop    edx
+ 00000241  5B		   *	    pop    ebx
+ 00000242  C3		   *	    ret    00000h
+				
+ 00000243			initSnake ENDP
+				
+				
+ 00000243			clearMem PROC				;// Brise frejmbafer, resetuje poziciju zmije i duzinu
+											;// i postavlja sve flegove na njihovu default vrednost
+ 00000243  B6 00		    mov dh, 0               ;// Postavja registar kojim se krece kroz Y koordinate na 0
+ 00000245  66| BB 0000		    mov bx, 0               ;// Postavlja data registar na 0
+				
+ 00000249			    rowLoop:                ;// Obilazak matrice po redovima
+ 00000249  80 FE 18		        cmp dh, 24          ;// Broji dok ne dostigne 24 (poslednji red) i iskace
+ 0000024C  74 14		        je endRowLoop
+				
+ 0000024E  B2 00		        mov dl, 0           ;// Postavlja registar kojim se krece kroz X koordinate na 0
+				
+ 00000250			        columnLoop:              ;// Obilazak kolona unutar trenutnog reda
+ 00000250  80 FA 50		            cmp dl, 80			 ;// Kada dodje do 80 (poslednja kolona), iskace
+ 00000253  74 09		            je endColumnLoop     
+				
+ 00000255  E8 000005FA		            call saveIndex		 ;// Poziva proceduru za upis u frejmbafer na osnovu dh i dl
+												 
+ 0000025A  FE C2		            INC dl				 ;// Petlja se nastavlja u sledecoj koloni
+ 0000025C  EB F2		            jmp columnLoop       
+				
+ 0000025E			    endColumnLoop:           ;// Kraj unutrasnje petlje
+ 0000025E  FE C6		        INC dh				 ;// Povecava broj reda i nastavlja petlju u njemu
+ 00000260  EB E7		        jmp rowLoop           
+				
+ 00000262			endRowLoop:								  ;// Kraj spoljasnje petlje
+ 00000262  C6 05 00001210 R	    mov tailY, tailY_default              ;// Resetuje koordinate glave i repa na default
+	   0C
+ 00000269  C6 05 00001211 R	    mov tailX, tailX_default             
+	   25
+ 00000270  C6 05 0000120E R	    mov headY, headY_default              
+	   0C
+ 00000277  C6 05 0000120F R	    mov headX, headX_default			  
+	   28
+				
+ 0000027E  C6 05 00001223 R	    mov flag_endTheGame, 0					;// Brise fleg koji oznacava kraj igre (dakle, nije kraj igre jos)
+	   00
+ 00000285  C6 05 00001220 R	    mov flag_tail, 1						;// Postavlja fleg za brisanje repa (nikakva hrana nije pojedena, vraca zmijicu na 4 polja)
+	   01
+ 0000028C  C6 05 00001214 R	    mov currDirection, direction_default    ;// Trenutni i sledeci smer kretanja vraceni na default
+	   52
+ 00000293  C6 05 00001215 R	    mov newDirection, direction_default    
+	   52
+ 0000029A  C7 05 00001216 R		mov snakeSpeed, 100
+	   00000064
+ 000002A4  C7 05 00001224 R	    mov playerScore, 0						;// Resetuje score igraca
+	   00000000
+				
+ 000002AE  C3			    RET
+ 000002AF			clearMem ENDP
+				
+				
+ 000002AF			startGame PROC USES eax ebx ecx edx
+				COMMENT &/*
+				Ova procedura je zapravo glavna, zaduzena je za obavljanje glavnog posla, a to
+				je upravljanje zmijicom, reagovanje na kontrole koje zadaje korisnik, i zavisno
+				od trenutnog smera kretanja menja ili ne menja kretanje zmije.
+				Procedura takodje vrsi kontrolu vremenskog razmaka izmedju iscrtavanja, cime se 
+				prividno kontrolise brzina zmije.
+				Izvrsava se beskonacna petlja iz koje se iskace kada korisnik pritisne ESC ili
+				dodje do sudara zmije sa samom sobom ili sa zidom (ako ga ima), i pri izlasku
+				se resetuju flegovi i cisti frejmbafer.
+				*/&
+				
+ 000002AF  50		   *	    push   eax
+ 000002B0  53		   *	    push   ebx
+ 000002B1  51		   *	    push   ecx
+ 000002B2  52		   *	    push   edx
+ 000002B3  B8 00000002		        mov eax, green + (black * 16)       
+ 000002B8  E8 00000000 E	        call SetTextColor
+ 000002BD  B6 18		        mov dh, 24                          ;// Ispisivanje skora u donjem levom uglu
+ 000002BF  B2 00		        mov dl, 0                           
+ 000002C1  E8 00000000 E	        call GotoXY                         
+ 000002C6  BA 000002EC R	        mov edx, offset scoreString
+ 000002CB  E8 00000000 E	        call WriteString
+				
+				        ;// Uzima input iz konzole i smesta u memoriju
+				        invoke getStdHandle, STD_INPUT_HANDLE
+ 000002D0  6A F6	   *	    push    -00000000Ah
+ 000002D2  E8 00000000 E   *	    call   GetStdHandle
+ 000002D7  A3 00000004 R	        mov stdInHandle, eax
+ 000002DC  B9 0000000A		        mov ecx, 10
+				        ;// Cita dva dogadjaja iz bafera
+				        invoke ReadConsoleInput, stdInHandle, addr temp, 1, addr bRead
+ 000002E1  68 0000001C R   *	    push   OFFSET bRead
+ 000002E6  6A 01	   *	    push   +000000001h
+ 000002E8  68 0000000C R   *	    push   OFFSET temp
+ 000002ED  FF 35 00000004 R *	    push   stdInHandle
+ 000002F3  E8 00000000 E   *	    call   ReadConsoleInputA
+				        invoke ReadConsoleInput, stdInHandle, addr temp, 1, addr bRead
+ 000002F8  68 0000001C R   *	    push   OFFSET bRead
+ 000002FD  6A 01	   *	    push   +000000001h
+ 000002FF  68 0000000C R   *	    push   OFFSET temp
+ 00000304  FF 35 00000004 R *	    push   stdInHandle
+ 0000030A  E8 00000000 E   *	    call   ReadConsoleInputA
+				
+				       
+ 0000030F			    mainGameLoop:		;// Glavna beskonacna petlja
+				
+				        ;// Broj dogadjaja u baferu
+				        invoke GetNumberOfConsoleInputEvents, stdInHandle, addr numInp
+ 0000030F  68 00000008 R   *	    push   OFFSET numInp
+ 00000314  FF 35 00000004 R *	    push   stdInHandle
+ 0000031A  E8 00000000 E   *	    call   GetNumberOfConsoleInputEvents
+ 0000031F  8B 0D 00000008 R	        mov ecx, numInp
+				
+ 00000325  83 F9 00		        cmp ecx, 0                          ;// Provera da li je input bafer prazan
+ 00000328  0F 84 0000009D	        je done                             ;// Ako jeste, to znaci da nije bilo interakcije korisnika
+															;// sa programom i preskace se hendlovanje bilo kakvog inputa
+															;// i nastavlja sa kretanjem zmijice u smeru u kom je zapocela kretanje
+				
+				        ;// Cita jedan event iz bafera i smesta u temp
+				        invoke ReadConsoleInput, stdInHandle, addr temp, 1, addr bRead
+ 0000032E  68 0000001C R   *	    push   OFFSET bRead
+ 00000333  6A 01	   *	    push   +000000001h
+ 00000335  68 0000000C R   *	    push   OFFSET temp
+ 0000033A  FF 35 00000004 R *	    push   stdInHandle
+ 00000340  E8 00000000 E   *	    call   ReadConsoleInputA
+ 00000345  66| 8B 15		        mov dx, word PTR temp               ;// Samo u slucaju da je event tipa KEY_EVENT,
+	   0000000C R
+ 0000034C  66| 83 FA 01		        cmp dx, 1                           ;// sto su ugradjeni tipovi za dogadjaje koji se signaliziraju
+ 00000350  75 BD		        jne mainGameLoop                    ;// operativnom sistemu kada se desi input na tastaturi, onda se procesira dalje taj dogadjaj
+				
+ 00000352  8A 15 00000010 R	            mov dl, byte PTR [temp+4]       ;// Posto se signal generise i u slucaju da se dugme pritisne i otpusti
+ 00000358  80 FA 00		            cmp dl, 0						;// biti koji znace otpustanje se preskacu
+ 0000035B  74 B2		            je mainGameLoop
+ 0000035D  8A 15 00000016 R	                mov dl, byte PTR [temp+10]  ;// a pritisnuti koji vracaju hexa kod dugmeta koje je pritisnuto se procesiraju
+				
+ 00000363  80 FA 1B		                cmp dl, ESC_KEY                 ;// Ako je ESC pritisnut, vraca se na pocetni meni
+ 00000366  0F 84 00000094	                je quit                     
+				
+ 0000036C  80 3D 00001214 R	                cmp currDirection, 'U'      ;// Samo u slucaju da se zmija krece navise ili nanize, moze se izvrsiti
+	   55
+ 00000373  74 0B		                je handleHorMovement        ;// promena smera kretanja u levo ili desno, zavisno od pritisnutog tastera
+ 00000375  80 3D 00001214 R	                cmp currDirection, 'D'                  
+	   44
+ 0000037C  74 02		                je handleHorMovement                   
+				
+ 0000037E  EB 24		                jmp handleVerMovement       ;// Ako se ne prodju gornje dve provere, to znaci da je trenutno kretanje zmije
+				                                            ;// horizontalno, pa se mogu procesirati samo promene smera u vertikalnom pravcu
+ 00000380			                handleHorMovement:
+ 00000380  80 FA 25		                    cmp dl, LEFT_KEY              ;// Ukoliko je pritisnuta strelica ulevo
+ 00000383  74 07		                    je handleHorMovement1
+				
+ 00000385  80 FA 27		                    cmp dl, RIGHT_KEY             ;// Ukoliko je pritisnuta strelica udesno
+ 00000388  74 0E		                    je handleHorMovement2
+				
+ 0000038A  EB 83		                    jmp mainGameLoop          
+				                                            
+ 0000038C			                    handleHorMovement1:
+ 0000038C  C6 05 00001215 R	                        mov newDirection, 'L'       
+	   4C
+ 00000393  E9 FFFFFF77		                        jmp mainGameLoop
+				
+ 00000398			                    handleHorMovement2:
+ 00000398  C6 05 00001215 R	                        mov newDirection, 'R'       
+	   52
+ 0000039F  E9 FFFFFF6B		                        jmp mainGameLoop
+				
+ 000003A4			                handleVerMovement:
+ 000003A4  80 FA 26		                    cmp dl, UP_KEY             ;// Pritisnuta strelica navise
+ 000003A7  74 0A		                    je handleVerMovement1
+				
+ 000003A9  80 FA 28		                    cmp dl, DOWN_KEY           ;// Nanize
+ 000003AC  74 11		                    je handleVerMovement2
+				
+ 000003AE  E9 FFFFFF5C		                    jmp mainGameLoop           
+																
+ 000003B3			                    handleVerMovement1:
+ 000003B3  C6 05 00001215 R	                        mov newDirection, 'U'       
+	   55
+ 000003BA  E9 FFFFFF50		                        jmp mainGameLoop
+ 000003BF			                    handleVerMovement2:
+ 000003BF  C6 05 00001215 R	                        mov newDirection, 'D'       
+	   44
+ 000003C6  E9 FFFFFF44		                        jmp mainGameLoop
+				
+				  
+ 000003CB			    done:
+				
+ 000003CB  8A 1D 00001215 R	        mov bl, newDirection                ;// Postavlja novi smer kretanja za smer kretanja zmije
+ 000003D1  88 1D 00001214 R			mov currDirection, bl				;// Mora ovako preko registra, jer nije dozvoljeno 
+															;// dodeljivanje iz promenljive u promenljivu
+				
+ 000003D7  E8 00000068		        call MoveSnake                      ;// Poziva se procedura koja kontrolise kretanje zmije
+ 000003DC  A1 00001216 R	        mov eax, snakeSpeed                 ;// Uvodi se kasnjenje u iscrtavanju koje daje utisak kretanja
+ 000003E1  E8 00000000 E	        call Delay                          
+				
+ 000003E6  8A 1D 00001214 R	        mov bl, currDirection                 
+ 000003EC  88 1D 00001215 R	        mov newDirection, bl                        
+				
+ 000003F2  80 3D 00001223 R	        cmp flag_endTheGame, 1              ;// Ako je se desio sudar, fleg je to zapamtio
+	   01
+ 000003F9  74 05		        je quit                             ;// pa se izlazi iz igre
+				
+ 000003FB  E9 FFFFFF0F		        jmp mainGameLoop                    ;// U suprotnom se vraca na glavni loop
+				
+ 00000400			    quit:	
+ 00000400  B8 00000002				mov eax, green + (black * 16)									 
+ 00000405  E8 00000000 E			call SetTextColor 
+ 0000040A  E8 00000000 E			call clrscr
+ 0000040F  50					push eax
+ 00000410  52					push edx
+ 00000411  B6 0C				mov dh, 12             
+ 00000413  B2 18				mov dl, 24
+ 00000415  E8 00000000 E			call GotoXY
+ 0000041A  BA 000002F5 R			mov edx, offset yourScoreString
+ 0000041F  E8 00000000 E			call writeString
+ 00000424  A1 00001224 R			mov eax, playerScore
+ 00000429  E8 00000000 E			call writedec
+ 0000042E  B8 000009C4				mov eax, 2500
+ 00000433  E8 00000000 E			call delay
+ 00000438  5A					pop edx
+ 00000439  58					pop eax
+ 0000043A  E8 FFFFFE04		        call clearMem                       ;// Ispisuje postignut skor, vraca podesavanja na default i ide na glavni meni
+						                                            
+				    RET
+ 0000043F  5A		   *	    pop    edx
+ 00000440  59		   *	    pop    ecx
+ 00000441  5B		   *	    pop    ebx
+ 00000442  58		   *	    pop    eax
+ 00000443  C3		   *	    ret    00000h
+				
+ 00000444			startGame ENDP
+				
+				
+ 00000444			MoveSnake PROC USES ebx edx
+				
+				COMMENT &/*
+				Ova procedura osvezava frejmbafer, cime se efektivno vrsi pomeranje zmije.
+				Pocevsi od repa, ova procedura trazi sledeci susedni segment. Svi segmenti
+				bivaju osvezeni premestanjem na nove pozicije, pri cemu se poslednji brise
+				ukoliko hrana nije pojedena i novi segment se dodaje na pocetak i postaje
+				glava, zavisno od toga u kom smeru se vrsi kretanje zmije.
+				Takodje se ovde vrsi provera da li je doslo do sudara i da li je eventualno
+				pojedena hrana.
+				*/&
+				
+				
+ 00000444  53		   *	    push   ebx
+ 00000445  52		   *	    push   edx
+ 00000446  80 3D 00001220 R			cmp flag_tail, 1          
+	   01
+ 0000044D  0F 85 00000110			jne dontEraseTail       ;// Rep se ne brise ako fleg ne diktira tako
+				
+ 00000453  8A 35 00001210 R	        mov dh, tailY           ;// Ucitavaju se koordinate repa
+ 00000459  8A 15 00001211 R	        mov dl, tailX          
+ 0000045F  E8 000003C7		        call accessIndex		;// Pristupa se frejmbaferu na zadatim koordinatama i po povratku
+ 00000464  66| 4B		        dec bx					;// u bx imamo upisanu vrednost koju je vratio frejmbafer, cija
+												;// vrednost se dekrementira, cime efektivno dobijamo vrednost sledeceg segmenta
+ 00000466  66| 89 1D		        mov search, bx			;// Vrednost sledeceg segmenta se stavlja u search
+	   00001221 R
+				
+ 0000046D  66| BB 0000		        mov bx, 0				;// Iz frejmbafera se vrednost koja odgovara repu stavlja na 0, tj. brise
+ 00000471  E8 000003DE		        call saveIndex      
+				
+ 00000476  E8 00000000 E	        call GotoXY				;// kao i sa ekrana
+ 0000047B  B8 00000002		        mov eax, green + (black * 16)
+ 00000480  E8 00000000 E	        call SetTextColor
+ 00000485  B0 20		        mov al, ' '
+ 00000487  E8 00000000 E	        call WriteChar
+				
+ 0000048C  52			        push edx            ;// Kursor se postavlja u donji desni ugao
+ 0000048D  B2 4F		        mov dl, 79
+ 0000048F  B6 17		        mov dh, 23
+ 00000491  E8 00000000 E	        call GotoXY
+ 00000496  5A			        pop edx
+				
+ 00000497  8A C6		        mov al, dh          ;// Y koordinata repa se smesta u al
+ 00000499  FE C8		        dec al              
+ 0000049B  A2 0000121C R	        mov Yabove, al      ;// Cuva se indeks reda iznad trenutnog 
+ 000004A0  04 02		        add al, 2           
+ 000004A2  A2 0000121E R	        mov Ybelow, al      ;// Indeks reda ispod trenutnog
+				
+ 000004A7  8A C2		        mov al, dl          ;// X koordinata repa se smesta u al
+ 000004A9  FE C8		        dec al              
+ 000004AB  A2 0000121D R	        mov Xleft, al       ;// Cuva se indeks kolone levo od trenutne
+ 000004B0  04 02		        add al, 2           
+ 000004B2  A2 0000121F R	        mov Xright, al      ;// Cuva se indeks kolone desno od trenutne
+				
+ 000004B7  80 3D 0000121E R	        cmp Ybelow, 24          ;// Ako indeks izlazi van okvira ekrana na donju stranu
+	   18
+ 000004BE  75 07		        jne next1
+ 000004C0  C6 05 0000121E R	        mov Ybelow, 0			;// vraca se na 0, tj. na gornju
+	   00
+				
+ 000004C7			        next1:
+ 000004C7  80 3D 0000121F R	        cmp Xright, 80          ;// Ako indeks izlazi van okvira ekrana u desnu stranu
+	   50
+ 000004CE  75 07		        jne next2
+ 000004D0  C6 05 0000121F R	        mov Xright, 0			;// vraca se na 0, tj. na levu
+	   00
+				
+ 000004D7			        next2:
+ 000004D7  80 3D 0000121C R	        cmp Yabove, 0           ;// Ako indeks izlazi van okvira ekrana u gornju stranu
+	   00
+ 000004DE  7D 07		        JGE next3
+ 000004E0  C6 05 0000121C R	        mov Yabove, 23			;// vraca se na 23, tj. na donju
+	   17
+				
+ 000004E7			        next3:
+ 000004E7  80 3D 0000121D R	        cmp Xleft, 0            ;// Ako indeks izlazi van okvira ekrana u levu stranu
+	   00
+ 000004EE  7D 07		        JGE next4
+ 000004F0  C6 05 0000121D R	        mov Xleft, 79			;// vraca se na 79, tj. na desnu
+	   4F
+				
+ 000004F7			        next4:
+ 000004F7  8A 35 0000121C R	        mov dh, Yabove          ;// Y koordinata piksela iznad repa
+ 000004FD  8A 15 00001211 R	        mov dl, tailX			;// X koordinata piksela iznad repa
+ 00000503  E8 00000323		        call accessIndex		;// Pristupa se pikselu u frejmbaferu
+ 00000508  66| 3B 1D		        cmp bx, search			;// Provera da li je piksel sledeci segment zmije
+	   00001221 R
+ 0000050F  75 08		        jne melseif1
+ 00000511  88 35 00001210 R	        mov tailY, dh			;// i pomera rep na novu lokaciju, ako jeste
+ 00000517  EB 4A		        jmp mendif
+				
+ 00000519			        melseif1:
+ 00000519  8A 35 0000121E R	        mov dh, Ybelow          ;// Y koordinata piksela ispod repa
+ 0000051F  E8 00000307		        call accessIndex		;// Pristupa se pikselu u frejmbaferu
+ 00000524  66| 3B 1D		        cmp bx, search			;// Provera da li je piksel sledeci segment zmije
+	   00001221 R
+ 0000052B  75 08		        jne melseif2
+ 0000052D  88 35 00001210 R	        mov tailY, dh			;// i pomera rep na novu lokaciju, ako jeste
+ 00000533  EB 2E		        jmp mendif
+				
+ 00000535			        melseif2:
+ 00000535  8A 35 00001210 R	        mov dh, tailY           ;// Y koordinata piksela levo od repa
+ 0000053B  8A 15 0000121D R	        mov dl, Xleft           ;// X koordinata piksela levo od repa
+ 00000541  E8 000002E5		        call accessIndex	    ;// Pristupa se pikselu u frejmbaferu
+ 00000546  66| 3B 1D		        cmp bx, search		    ;// Provera da li je piksel sledeci segment zmije
+	   00001221 R
+ 0000054D  75 08		        jne melse
+ 0000054F  88 15 00001211 R	        mov tailX, dl			;// i pomera rep na novu lokaciju, ako jeste
+ 00000555  EB 0C		        jmp mendif
+				
+ 00000557			        melse:
+ 00000557  8A 15 0000121F R	        mov dl, Xright			;// Pomera rep na piksel desno od repa
+ 0000055D  88 15 00001211 R	        mov tailX, dl
+				
+ 00000563			        mendif:
+				
+ 00000563					dontEraseTail:
+ 00000563  C6 05 00001220 R			mov flag_tail, 1        ;// Postavlja se fleg za brisanje repa
+	   01
+ 0000056A  8A 35 00001210 R			mov dh, tailY            
+ 00000570  8A 15 00001211 R			mov dl, tailX            
+ 00000576  88 35 0000121A R			mov tempY, dh           ;// Pamti se indeks reda u promenljivu
+ 0000057C  88 15 0000121B R			mov tempX, dl           ;// Pamti se indeks kolone u promenljivu
+				
+ 00000582					whileTrue:              ;// Prolazak kroz sve segmente zmijice i podesavanje vrednosti svakog
+ 00000582  8A 35 0000121A R	        mov dh, tempY           
+ 00000588  8A 15 0000121B R	        mov dl, tempX        
+ 0000058E  E8 00000298		        call accessIndex		;// Vrednost piksela izvadjena iz frejmbafera
+ 00000593  66| 4B		        dec bx					;// U bx se smesta vrednost sledeceg segmenta							
+ 00000595  66| 89 1D		        mov search, bx			
+	   00001221 R
+				
+ 0000059C  53			        push ebx				;// Vrednost trenutnog segmenta refresuje se vrednoscu prethodnog segmenta
+ 0000059D  66| 83 C3 02		        add bx, 2				;// (zbog kretanja zmije, segmenti se krecu)
+ 000005A1  E8 000002AE		        call saveIndex			
+ 000005A6  5B			        pop ebx
+				
+ 000005A7  66| 83 FB 00		        cmp bx, 0				;// Provera da li je trenutni segment glava zmije
+ 000005AB  0F 84 000000D1	        je break				
+				
+ 000005B1  8A C6		        mov al, dh				;// Indeks reda trenutnog segmenta 
+ 000005B3  FE C8		        dec al					;// Indeks reda iznad trenutnog
+ 000005B5  A2 0000121C R	        mov Yabove, al          
+ 000005BA  04 02		        add al, 2				;// Indeks reda ispod trenutnog
+ 000005BC  A2 0000121E R	        mov Ybelow, al          
+				
+ 000005C1  8A C2		        mov al, dl				;// Indeks kolone trenutnog segmenta
+ 000005C3  FE C8		        dec al					;// Indeks kolone levo od trenutne
+ 000005C5  A2 0000121D R	        mov Xleft, al           
+ 000005CA  04 02		        add al, 2				;// Indeks kolone desno od trenutne
+ 000005CC  A2 0000121F R	        mov Xright, al          
+				
+ 000005D1  80 3D 0000121E R	        cmp Ybelow, 24          ;// Ako novi indeks izlazi van granica, vrati ga
+	   18
+ 000005D8  75 07		        jne next21
+ 000005DA  C6 05 0000121E R	        mov Ybelow, 0	        
+	   00
+				
+ 000005E1			        next21:
+ 000005E1  80 3D 0000121F R	        cmp Xright, 80          ;// Ako novi indeks izlazi van granica, vrati ga
+	   50
+ 000005E8  75 07		        jne next22
+ 000005EA  C6 05 0000121F R	        mov Xright, 0	        
+	   00
+				
+ 000005F1			        next22:
+ 000005F1  80 3D 0000121C R	        cmp Yabove, 0           ;// Ako novi indeks izlazi van granica, vrati ga
+	   00
+ 000005F8  7D 07		        JGE next23
+ 000005FA  C6 05 0000121C R	        mov Yabove, 23          
+	   17
+				
+ 00000601			        next23:
+ 00000601  80 3D 0000121D R	        cmp Xleft, 0            ;// Ako novi indeks izlazi van granica, vrati ga
+	   00
+ 00000608  7D 07		        JGE next24
+ 0000060A  C6 05 0000121D R	        mov Xleft, 79		    
+	   4F
+				
+ 00000611			        next24:
+ 00000611  8A 35 0000121C R	        mov dh, Yabove          ;// Indeks reda piksela iznad trenutnog segmenta
+ 00000617  8A 15 0000121B R	        mov dl, tempX			;// Indeks kolone piksela iznad trenutnog segmenta
+ 0000061D  E8 00000209		        call accessIndex	    ;// Pristup pikselu u frejmbaferu
+ 00000622  66| 3B 1D		        cmp bx, search          ;// Provera da li je piksel sledeci segment zmije
+	   00001221 R
+ 00000629  75 08		        jne elseif21
+ 0000062B  88 35 0000121A R	        mov tempY, dh           ;// pomeri indeks na novu lokaciju, ako jeste
+ 00000631  EB 4A		        jmp endif2
+				
+ 00000633			        elseif21:
+ 00000633  8A 35 0000121E R	        mov dh, Ybelow          ;// Indeks reda piksela ispod trenutnog segmenta
+ 00000639  E8 000001ED		        call accessIndex		;// Pristup pikselu u frejmbaferu
+ 0000063E  66| 3B 1D		        cmp bx, search			;// Provera da li je piksel sledeci segment zmije
+	   00001221 R
+ 00000645  75 08		        jne elseif22
+ 00000647  88 35 0000121A R	        mov tempY, dh			;// pomeri indeks na novu lokaciju, ako jeste
+ 0000064D  EB 2E		        jmp endif2
+				
+ 0000064F			        elseif22:
+ 0000064F  8A 35 0000121A R	        mov dh, tempY			;// Indeks reda piksela levo od trenutnog segmenta
+ 00000655  8A 15 0000121D R	        mov dl, Xleft           ;// Indeks kolone piksela levo od trenutnog segmenta
+ 0000065B  E8 000001CB		        call accessIndex		;// Pristup pikselu u frejmbaferu
+ 00000660  66| 3B 1D		        cmp bx, search			;// Provera da li je piksel sledeci segment zmije
+	   00001221 R
+ 00000667  75 08		        jne else2
+ 00000669  88 15 0000121B R	        mov tempX, dl			;// pomeri indeks na novu lokaciju, ako jeste
+ 0000066F  EB 0C		        jmp endif2
+				
+ 00000671			        else2:
+ 00000671  8A 15 0000121F R	        mov dl, Xright		    ;// Pomeri indeks na piksel desno od segmenta
+ 00000677  88 15 0000121B R	        mov tempX, dl
+				
+ 0000067D			        endif2:
+ 0000067D  E9 FFFFFF00		        jmp whileTrue           ;// Nastavlja se petlja dok se ne dodje do glave zmije
+				
+ 00000682			    break:
+				
+ 00000682  A0 0000120E R	    mov al, headY               ;// Y koordinata glave
+ 00000687  FE C8		    dec al						
+ 00000689  A2 0000121C R	    mov Yabove, al              ;// Indeks reda iznad
+ 0000068E  04 02		    add al, 2					
+ 00000690  A2 0000121E R	    mov Ybelow, al              ;// Indeks reda ispod
+				
+ 00000695  A0 0000120F R	    mov al, headX               
+ 0000069A  FE C8		    dec al						
+ 0000069C  A2 0000121D R	    mov Xleft, al               
+ 000006A1  04 02		    add al, 2					
+ 000006A3  A2 0000121F R	    mov Xright, al              
+				
+ 000006A8  80 3D 0000121E R	    cmp Ybelow, 24              ;// Ako prelazi granice, vrati ga
+	   18
+ 000006AF  75 07		    jne next31
+ 000006B1  C6 05 0000121E R	        mov Ybelow, 0           
+	   00
+				
+ 000006B8			    next31:
+ 000006B8  80 3D 0000121F R	    cmp Xright, 80              
+	   50
+ 000006BF  75 07		    jne next32
+ 000006C1  C6 05 0000121F R	        mov Xright, 0           
+	   00
+				
+ 000006C8			    next32:
+ 000006C8  80 3D 0000121C R	    cmp Yabove, 0               
+	   00
+ 000006CF  7D 07		    JGE next33
+ 000006D1  C6 05 0000121C R	        mov Yabove, 23          
+	   17
+				
+ 000006D8			    next33:
+ 000006D8  80 3D 0000121D R	    cmp Xleft, 0               
+	   00
+ 000006DF  7D 07		    JGE next34
+ 000006E1  C6 05 0000121D R	        mov Xleft, 79          
+	   4F
+				
+ 000006E8			    next34:
+				
+ 000006E8  80 3D 00001214 R	    cmp currDirection, 'U'              ;// Ako je smer kretanja navise, Y koordinata glave
+	   55
+ 000006EF  75 0C		    jne elseif3							;// se penje u red iznad
+ 000006F1  A0 0000121C R	        mov al, Yabove          
+ 000006F6  A2 0000120E R	        mov headY, al          
+ 000006FB  EB 34		        jmp endif3
+				
+ 000006FD			    elseif3:
+ 000006FD  80 3D 00001214 R	    cmp currDirection, 'D'              ;// Ako je nanize, ispod
+	   44
+ 00000704  75 0C		    jne elseif32
+ 00000706  A0 0000121E R	        mov al, Ybelow          
+ 0000070B  A2 0000120E R	        mov headY, al          
+ 00000710  EB 1F		        jmp endif3
+				
+ 00000712			    elseif32:
+ 00000712  80 3D 00001214 R	    cmp currDirection, 'L'              ;// Ako je levo, onda levo
+	   4C
+ 00000719  75 0C		    jne else3
+ 0000071B  A0 0000121D R	        mov al, Xleft          
+ 00000720  A2 0000120F R	        mov headX, al          
+ 00000725  EB 0A		        jmp endif3
+				
+ 00000727			    else3:
+ 00000727  A0 0000121F R	        mov al, Xright					;// Desno, onda desno
+ 0000072C  A2 0000120F R	        mov headX, al          
+				
+ 00000731			    endif3:
+				
+ 00000731  8A 35 0000120E R	    mov dh, headY              
+ 00000737  8A 15 0000120F R	    mov dl, headX              
+				
+ 0000073D  E8 000000E9		    call accessIndex        ;// Pristupa se poziciji gde bi trebalo da je nova glava
+ 00000742  66| 83 FB 00		    cmp bx, 0               ;// Ako je prazan piksel, onda nije doslo do sudara
+ 00000746  74 27		    je NoHit                
+				                            
+ 00000748  B8 000007D0		    mov eax, 2000           ;// Ako jeste, ispisuje se poruka i izlazi iz procedure
+ 0000074D  B6 18		    mov dh, 24              
+ 0000074F  B2 0B		    mov dl, 11              
+ 00000751  E8 00000000 E	    call GotoXY
+ 00000756  BA 000002E1 R	    mov edx, offset gameOverString
+ 0000075B  E8 00000000 E	    call WriteString
+				
+ 00000760  E8 00000000 E	    call Delay              
+ 00000765  C6 05 00001223 R	    mov flag_endTheGame, 1            
+	   01
+				
+				    RET                     
+ 0000076C  5A		   *	    pop    edx
+ 0000076D  5B		   *	    pop    ebx
+ 0000076E  C3		   *	    ret    00000h
+				
+ 0000076F			    NoHit:                  ;// Ako nije bilo sudara
+ 0000076F  66| BB 0001		    mov bx, 1               
+ 00000773  E8 000000DC		    call saveIndex          
+				
+ 00000778  8A 0D 00001213 R	    mov cl, foodX              
+ 0000077E  8A 2D 00001212 R	    mov ch, foodY              
+				
+ 00000784  3A CA		    cmp cl, dl              ;// Ako se koordinate glave i hrane ne poklapaju,
+ 00000786  75 35		    jne foodNotGobbled      ;// hrana nije pojedena
+ 00000788  3A EE		    cmp ch, dh              
+ 0000078A  75 31		    jne foodNotGobbled      
+				
+ 0000078C  E8 0000004E		    call createFood         ;// Ako je pojedena, pravi se nova 
+ 00000791  C6 05 00001220 R	    mov flag_tail, 0            
+	   00
+				                            
+				
+ 00000798  B8 00000002		    mov eax, green + (black * 16)
+ 0000079D  E8 00000000 E	    call SetTextColor       
+				
+ 000007A2  52			    push edx                
+				
+ 000007A3  B6 18		    mov dh, 24              ;// Apdejtuje se skor
+ 000007A5  B2 07		    mov dl, 7
+ 000007A7  E8 00000000 E	    call GotoXY
+ 000007AC  A1 00001224 R	    mov eax, playerScore         
+ 000007B1  40			    INC eax
+ 000007B2  E8 00000000 E	    call WriteDec
+ 000007B7  A3 00001224 R	    mov playerScore, eax         
+				
+ 000007BC  5A			    pop edx                 
+				
+ 000007BD			    foodNotGobbled:         
+ 000007BD  E8 00000000 E	    call GotoXY             
+ 000007C2  B8 00000021		    mov eax, blue + (green * 16)
+ 000007C7  E8 00000000 E	    call setTextColor       
+ 000007CC  B0 20		    mov al, ' '             
+ 000007CE  E8 00000000 E	    call WriteChar
+ 000007D3  B6 18		    mov dh, 24              
+ 000007D5  B2 4F		    mov dl, 79
+ 000007D7  E8 00000000 E	    call GotoXY
+				
+				    RET                     
+ 000007DC  5A		   *	    pop    edx
+ 000007DD  5B		   *	    pop    ebx
+ 000007DE  C3		   *	    ret    00000h
+				
+ 000007DF			MoveSnake ENDP
+				
+				
+ 000007DF			createFood PROC USES eax ebx edx
+				
+				;// Na random poziciji se generise hrana, ukoliko je ta pozicija prazna, kako
+				;// ne bi dolazilo do preklapanja zmijice i hrane prilikom generisanja
+				
+ 000007DF  50		   *	    push   eax
+ 000007E0  53		   *	    push   ebx
+ 000007E1  52		   *	    push   edx
+ 000007E2			    redo:                       
+ 000007E2  B8 00000018		    mov eax, 24                 
+ 000007E7  E8 00000000 E	    call RandomRange            
+ 000007EC  8A F0		    mov dh, al
+				
+ 000007EE  B8 00000050		    mov eax, 80                 
+ 000007F3  E8 00000000 E	    call RandomRange            
+ 000007F8  8A D0		    mov dl, al
+				
+ 000007FA  E8 0000002C		    call accessIndex            ;// Sadrzaj lokacije se smesta u bx
+				
+ 000007FF  66| 83 FB 00		    cmp bx, 0                   ;// I ako nije prazan, loopuje se dok se ne potrefi prazna pozicija
+ 00000803  75 DD		    jne redo                    
+				
+ 00000805  88 35 00001212 R	    mov foodY, dh                  
+ 0000080B  88 15 00001213 R	    mov foodX, dl                  
+				
+ 00000811  B8 000000FF		    mov eax, white + (white * 16);
+ 00000816  E8 00000000 E	    call setTextColor
+ 0000081B  E8 00000000 E	    call GotoXY
+ 00000820  B0 20			mov al, ' '  
+ 00000822  E8 00000000 E	    call WriteChar
+				
+				    RET
+ 00000827  5A		   *	    pop    edx
+ 00000828  5B		   *	    pop    ebx
+ 00000829  58		   *	    pop    eax
+ 0000082A  C3		   *	    ret    00000h
+				
+ 0000082B			createFood ENDP
+				
+ 0000082B			accessIndex PROC USES eax esi edx
+				
+				;// Procedura pristupa fremjbaferu i vraca vrednost na poziciji Y=dh, X=dl u registar bx
+				
+ 0000082B  50		   *	    push   eax
+ 0000082C  56		   *	    push   esi
+ 0000082D  52		   *	    push   edx
+ 0000082E  8A DE		    mov bl, dh      ;// Indeks reda u bl
+ 00000830  B0 50		    mov al, 80      
+ 00000832  F6 E3		    mul bl          ;// Indeks reda se mnozi sa 80 kako bi se dobio potreban segment frejmbafera
+ 00000834  66| 52		    push dx         
+ 00000836  B6 00		    mov dh, 0       ;// U dh ostaje samo indeks kolone
+ 00000838  66| 03 C2		    add ax, dx      ;// Dodaje se ofset kolone na segment reda kako bi se dobila adresa piksela
+ 0000083B  66| 5A		    pop dx          
+ 0000083D  BE 00000000		    mov esi, 0      
+ 00000842  66| 8B F0		    mov si, ax      ;// Generisana adresa se kopira u indeksni registar
+ 00000845  66| D1 E6		    shl si, 1       ;// Koji se siftuje za jedan posto su elementi tipa word
+				
+ 00000848  66| 8B 1C 35		    mov bx, frameBuffer[si]   ;// U bx se upisuje vrednost celije
+	   0000030E R
+				
+				    RET
+ 00000850  5A		   *	    pop    edx
+ 00000851  5E		   *	    pop    esi
+ 00000852  58		   *	    pop    eax
+ 00000853  C3		   *	    ret    00000h
+				
+ 00000854			accessIndex ENDP
+				
+				
+ 00000854			saveIndex PROC USES eax esi edx
+				
+				;// Procedura slicna accessIndex, samo sto se sad upisuje vrednost piksela na datoj poziciji
+				
+ 00000854  50		   *	    push   eax
+ 00000855  56		   *	    push   esi
+ 00000856  52		   *	    push   edx
+ 00000857  53			    push ebx        
+ 00000858  8A DE		    mov bl, dh      
+ 0000085A  B0 50		    mov al, 80      
+ 0000085C  F6 E3		    mul bl          
+ 0000085E  66| 52		    push dx         
+ 00000860  B6 00		    mov dh, 0       
+ 00000862  66| 03 C2		    add ax, dx      
+ 00000865  66| 5A		    pop dx          
+ 00000867  BE 00000000		    mov esi, 0      
+ 0000086C  66| 8B F0		    mov si, ax      
+ 0000086F  5B			    pop ebx         
+ 00000870  66| D1 E6		    shl si, 1       
+				                    
+ 00000873  66| 89 1C 35		    mov frameBuffer[si], bx   
+	   0000030E R
+				
+				    RET
+ 0000087B  5A		   *	    pop    edx
+ 0000087C  5E		   *	    pop    esi
+ 0000087D  58		   *	    pop    eax
+ 0000087E  C3		   *	    ret    00000h
+				
+ 0000087F			saveIndex ENDP
+				
+				
+ 0000087F			Paint PROC USES eax edx ebx esi
+				
+				;// Procedura cita vrednosti iz frejmbafera piksel po piksela i stampa ih u konzolu.
+				
+ 0000087F  50		   *	    push   eax
+ 00000880  52		   *	    push   edx
+ 00000881  53		   *	    push   ebx
+ 00000882  56		   *	    push   esi
+ 00000883  B8 00000021		    mov eax, blue + (green * 16)    
+ 00000888  E8 00000000 E	    call SetTextColor
+				
+ 0000088D  B6 00		    mov dh, 0                      
+				
+ 0000088F			    loop1:                          ;// Loopuje se kroz redove
+ 0000088F  80 FE 18		        cmp dh, 24                  
+ 00000892  7D 66		        JGE endLoop1                
+				
+ 00000894  B2 00		        mov dl, 0                   
+				
+ 00000896			        loop2:                      ;// Loopuje se kroz kolone
+ 00000896  80 FA 50		            cmp dl, 80              
+ 00000899  7D 5B		            JGE endLoop2            
+ 0000089B  E8 00000000 E	            call GOTOXY            
+				
+ 000008A0  8A DE		            mov bl, dh              ;// Naredne linije dohvataju vrednost piksela
+ 000008A2  B0 50		            mov al, 80              ;// iz frejmbafera na zadatim koordinatama (dl, dh)
+ 000008A4  F6 E3		            mul bl
+ 000008A6  66| 52		            push dx                
+ 000008A8  B6 00		            mov dh, 0               
+ 000008AA  66| 03 C2		            add ax, dx              
+ 000008AD  66| 5A		            pop dx                  
+ 000008AF  BE 00000000		            mov esi, 0              
+ 000008B4  66| 8B F0		            mov si, ax              
+ 000008B7  66| D1 E6		            shl si, 1               
+				                                    
+ 000008BA  66| 8B 1C 35		            mov bx, frameBuffer[si]           
+	   0000030E R
+				
+ 000008C2  66| 83 FB 00		            cmp bx, 0               ;// Ako je piksel prazan, ne stampa se nista u konzolu
+ 000008C6  74 2A		            je NoPrint              
+				
+ 000008C8  66| 83 FB FF		            cmp bx, 0FFFFh          ;// Ako je deo zida, skace se na labelu za iscrtavanje zida
+ 000008CC  74 09		            je printWall          
+				
+ 000008CE  B0 20		            mov al, ' '             ;// Inace je deo zmije pa se stampa whitespace u beloj boji
+ 000008D0  E8 00000000 E	            call WriteChar          
+ 000008D5  EB 1B		            jmp noPrint             
+				
+ 000008D7			            printWall:              ;// Iscrtava zidove
+ 000008D7  B8 00000081		            mov eax, blue + (gray * 16) 
+ 000008DC  E8 00000000 E	            call SetTextColor
+				
+ 000008E1  B0 20		            mov al, ' '             
+ 000008E3  E8 00000000 E	            call WriteChar
+				
+ 000008E8  B8 00000021		            mov eax, blue + (green * 16)    
+ 000008ED  E8 00000000 E	            call SetTextColor               
+				
+ 000008F2			            NoPrint:
+ 000008F2  FE C2		            INC dl                  
+ 000008F4  EB A0		            jmp loop2               ;// Nastavlja se dalje loopovanje kroz kolone
+				
+ 000008F6			    endLoop2:                       
+ 000008F6  FE C6		        INC dh                      
+ 000008F8  EB 95		        jmp loop1                   ;// I redove
+				
+ 000008FA			endLoop1:                           
+				
+				RET
+ 000008FA  5E		   *	    pop    esi
+ 000008FB  5B		   *	    pop    ebx
+ 000008FC  5A		   *	    pop    edx
+ 000008FD  58		   *	    pop    eax
+ 000008FE  C3		   *	    ret    00000h
+				
+ 000008FF			Paint ENDP
+				
+				
+ 000008FF			generateLevel PROC
+				
+				;// Procedura koja se brine za iscrtavanje igralista. Moze biti beskonacno ili sa zidovima.
+				;// Zidovi se u bafer upisuju kao 0FFFFh vrednosti.
+				
+ 000008FF  3C 01		    cmp al, 1               ;// Beskonacan, to je dafault
+ 00000901  75 01		    jne nextL                
+				
+ 00000903				izlaz:
+ 00000903  C3			    RET                     ;// Izlazi se, ne generisu se nikakve prepreke
+				
+ 00000904			    nextL:                  ;// Kutija
+ 00000904  3C 02		    cmp al, 2
+ 00000906  75 FB			jne izlaz
+				
+ 00000908  B6 00		    mov dh, 0               ;// Indeks reda na 0
+ 0000090A  66| BB FFFF		    mov bx, 0FFFFh          ;// U frejmbafer se upisuje FFFFh koji simbolizuje zid
+				
+ 0000090E			    rLoop:                  ;// Petlja za generisanje vertikalnih zidova
+ 0000090E  80 FE 18		        cmp dh, 24          
+ 00000911  74 12		        je endRLoop         
+				
+ 00000913  B2 00		        mov dl, 0           ;// Ide se na levi deo ekrana
+ 00000915  E8 FFFFFF3A		        call saveIndex      ;// U frejmbafer se sacuvava vrednost zida
+ 0000091A  B2 4F		        mov dl, 79          ;// Na desni deo ekrana
+ 0000091C  E8 FFFFFF33		        call saveIndex		;// U frejmbafer se sacuvava vrednost zida
+ 00000921  FE C6		        INC dh              ;// Sledeci red
+ 00000923  EB E9		        jmp rLoop           ;// Nastavlja se petlja
+ 00000925			    endRLoop:
+				
+ 00000925  B2 00		    mov dl, 0               
+				
+ 00000927			    cLoop:                  ;// Petlja za generisanje horizontalnih zidova
+ 00000927  80 FA 50		        cmp dl, 80          
+ 0000092A  74 12		        je endCLoop         
+				
+ 0000092C  B6 00		        mov dh, 0           ;// Na vrh ekrana
+ 0000092E  E8 FFFFFF21		        call saveIndex      
+ 00000933  B6 17		        mov dh, 23          ;// Na dno ekrana
+ 00000935  E8 FFFFFF1A		        call saveIndex      
+ 0000093A  FE C2		        INC dl              
+ 0000093C  EB E9		        jmp cLoop           
+				
+ 0000093E			        endCLoop:
+				
+ 0000093E  C3			    RET
+				
+ 0000093F			generateLevel ENDP
+				
+				END main
+Microsoft (R) Macro Assembler Version 14.14.26428.1	    06/07/18 08:17:39
+zmijica.asm						     Symbols 2 - 1
+
+
+
+
+Macros:
+
+                N a m e                 Type
+
+IsDefined  . . . . . . . . . . .	Func
+Startup  . . . . . . . . . . . .	Proc
+mDumpMem . . . . . . . . . . . .	Proc
+mDump  . . . . . . . . . . . . .	Proc
+mGotoxy  . . . . . . . . . . . .	Proc
+mReadString  . . . . . . . . . .	Proc
+mShowRegister  . . . . . . . . .	Proc
+mShow  . . . . . . . . . . . . .	Proc
+mWriteLn . . . . . . . . . . . .	Proc
+mWriteSpace  . . . . . . . . . .	Proc
+mWriteString . . . . . . . . . .	Proc
+mWrite . . . . . . . . . . . . .	Proc
+
+
+Structures and Unions:
+
+                N a m e                  Size
+                                         Offset      Type
+
+CONSOLE_CURSOR_INFO  . . . . . .	 00000008
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+  bVisible . . . . . . . . . . .	 00000004	 DWord
+CONSOLE_SCREEN_BUFFER_INFO . . .	 00000016
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+  dwCursorPosition . . . . . . .	 00000004	 DWord
+  wAttributes  . . . . . . . . .	 00000008	 Word
+  srWindow . . . . . . . . . . .	 0000000A	 QWord
+  dwMaximumWindowSize  . . . . .	 00000012	 DWord
+COORD  . . . . . . . . . . . . .	 00000004
+  X  . . . . . . . . . . . . . .	 00000000	 Word
+  Y  . . . . . . . . . . . . . .	 00000002	 Word
+FILETIME . . . . . . . . . . . .	 00000008
+  loDateTime . . . . . . . . . .	 00000000	 DWord
+  hiDateTime . . . . . . . . . .	 00000004	 DWord
+FOCUS_EVENT_RECORD . . . . . . .	 00000004
+  bSetFocus  . . . . . . . . . .	 00000000	 DWord
+FPU_ENVIRON  . . . . . . . . . .	 0000001C
+  controlWord  . . . . . . . . .	 00000000	 Word
+  statusWord . . . . . . . . . .	 00000004	 Word
+  tagWord  . . . . . . . . . . .	 00000008	 Word
+  instrPointerOffset . . . . . .	 0000000C	 DWord
+  instrPointerSelector . . . . .	 00000010	 DWord
+  operandPointerOffset . . . . .	 00000014	 DWord
+  operandPointerSelector . . . .	 00000018	 Word
+INPUT_RECORD . . . . . . . . . .	 00000014
+  EventType  . . . . . . . . . .	 00000000	 Word
+  Event  . . . . . . . . . . . .	 00000004	 XmmWord
+  bKeyDown . . . . . . . . . . .	 00000000	 DWord
+  wRepeatCount . . . . . . . . .	 00000004	 Word
+  wVirtualKeyCode  . . . . . . .	 00000006	 Word
+  wVirtualScanCode . . . . . . .	 00000008	 Word
+  uChar  . . . . . . . . . . . .	 0000000A	 Word
+  UnicodeChar  . . . . . . . . .	 00000000	 Word
+  AsciiChar  . . . . . . . . . .	 00000000	 Byte
+  dwControlKeyState  . . . . . .	 0000000C	 DWord
+  dwMousePosition  . . . . . . .	 00000000	 DWord
+  dwButtonState  . . . . . . . .	 00000004	 DWord
+  dwMouseControlKeyState . . . .	 00000008	 DWord
+  dwEventFlags . . . . . . . . .	 0000000C	 DWord
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+  dwCommandId  . . . . . . . . .	 00000000	 DWord
+  bSetFocus  . . . . . . . . . .	 00000000	 DWord
+KEY_EVENT_RECORD . . . . . . . .	 00000010
+  bKeyDown . . . . . . . . . . .	 00000000	 DWord
+  wRepeatCount . . . . . . . . .	 00000004	 Word
+  wVirtualKeyCode  . . . . . . .	 00000006	 Word
+  wVirtualScanCode . . . . . . .	 00000008	 Word
+  uChar  . . . . . . . . . . . .	 0000000A	 Word
+  UnicodeChar  . . . . . . . . .	 00000000	 Word
+  AsciiChar  . . . . . . . . . .	 00000000	 Byte
+  dwControlKeyState  . . . . . .	 0000000C	 DWord
+MENU_EVENT_RECORD  . . . . . . .	 00000004
+  dwCommandId  . . . . . . . . .	 00000000	 DWord
+MOUSE_EVENT_RECORD . . . . . . .	 00000010
+  dwMousePosition  . . . . . . .	 00000000	 DWord
+  dwButtonState  . . . . . . . .	 00000004	 DWord
+  dwMouseControlKeyState . . . .	 00000008	 DWord
+  dwEventFlags . . . . . . . . .	 0000000C	 DWord
+SMALL_RECT . . . . . . . . . . .	 00000008
+  Left . . . . . . . . . . . . .	 00000000	 Word
+  Top  . . . . . . . . . . . . .	 00000002	 Word
+  Right  . . . . . . . . . . . .	 00000004	 Word
+  Bottom . . . . . . . . . . . .	 00000006	 Word
+SYSTEMTIME . . . . . . . . . . .	 00000010
+  wYear  . . . . . . . . . . . .	 00000000	 Word
+  wMonth . . . . . . . . . . . .	 00000002	 Word
+  wDayOfWeek . . . . . . . . . .	 00000004	 Word
+  wDay . . . . . . . . . . . . .	 00000006	 Word
+  wHour  . . . . . . . . . . . .	 00000008	 Word
+  wMinute  . . . . . . . . . . .	 0000000A	 Word
+  wSecond  . . . . . . . . . . .	 0000000C	 Word
+  wMilliseconds  . . . . . . . .	 0000000E	 Word
+WINDOW_BUFFER_SIZE_RECORD  . . .	 00000004
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+CONST  . . . . . . . . . . . . .	32 Bit	 00000000 Para	  Public  'CONST'	 ReadOnly
+FLAT . . . . . . . . . . . . . .	GROUP
+STACK  . . . . . . . . . . . . .	32 Bit	 00001000 Para	  Stack	  'STACK'	 
+_BSS . . . . . . . . . . . . . .	32 Bit	 00000020 Para	  Public  'BSS'  
+_DATA  . . . . . . . . . . . . .	32 Bit	 00001244 Para	  Public  'DATA'	
+_TEXT  . . . . . . . . . . . . .	32 Bit	 0000093F Para	  Public  'CODE'	
+
+
+Procedures, parameters, and locals:
+
+                N a m e                 Type     Value    Attr
+
+CloseFile  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+CloseHandle  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Clrscr . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+CreateFileA  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+CreateOutputFile . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Crlf . . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Delay  . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+DumpMem  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+DumpRegs . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ExitProcess  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FileTimeToDosDateTime  . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FileTimeToSystemTime . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FlushConsoleInputBuffer  . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FormatMessageA . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetCommandLineA  . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetCommandTail . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleCP . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleCursorInfo . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleMode . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleScreenBufferInfo . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetDateTime  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetFileTime  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetKeyState  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetLastError . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetLocalTime . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetMaxXY . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetMseconds  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetNumberOfConsoleInputEvents  .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetProcessHeap . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetStdHandle . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetSystemTime  . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetTextColor . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetTickCount . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Gotoxy . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapAlloc  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapCreate . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapDestroy  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapFree . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapSize . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+IsDigit  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+LocalFree  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+MessageBoxA  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+MoveSnake  . . . . . . . . . . .	P Near	 00000444 _TEXT	Length= 0000039B Public STDCALL
+  next1  . . . . . . . . . . . .	L Near	 000004C7 _TEXT	
+  next2  . . . . . . . . . . . .	L Near	 000004D7 _TEXT	
+  next3  . . . . . . . . . . . .	L Near	 000004E7 _TEXT	
+  next4  . . . . . . . . . . . .	L Near	 000004F7 _TEXT	
+  melseif1 . . . . . . . . . . .	L Near	 00000519 _TEXT	
+  melseif2 . . . . . . . . . . .	L Near	 00000535 _TEXT	
+  melse  . . . . . . . . . . . .	L Near	 00000557 _TEXT	
+  mendif . . . . . . . . . . . .	L Near	 00000563 _TEXT	
+  dontEraseTail  . . . . . . . .	L Near	 00000563 _TEXT	
+  whileTrue  . . . . . . . . . .	L Near	 00000582 _TEXT	
+  next21 . . . . . . . . . . . .	L Near	 000005E1 _TEXT	
+  next22 . . . . . . . . . . . .	L Near	 000005F1 _TEXT	
+  next23 . . . . . . . . . . . .	L Near	 00000601 _TEXT	
+  next24 . . . . . . . . . . . .	L Near	 00000611 _TEXT	
+  elseif21 . . . . . . . . . . .	L Near	 00000633 _TEXT	
+  elseif22 . . . . . . . . . . .	L Near	 0000064F _TEXT	
+  else2  . . . . . . . . . . . .	L Near	 00000671 _TEXT	
+  endif2 . . . . . . . . . . . .	L Near	 0000067D _TEXT	
+  break  . . . . . . . . . . . .	L Near	 00000682 _TEXT	
+  next31 . . . . . . . . . . . .	L Near	 000006B8 _TEXT	
+  next32 . . . . . . . . . . . .	L Near	 000006C8 _TEXT	
+  next33 . . . . . . . . . . . .	L Near	 000006D8 _TEXT	
+  next34 . . . . . . . . . . . .	L Near	 000006E8 _TEXT	
+  elseif3  . . . . . . . . . . .	L Near	 000006FD _TEXT	
+  elseif32 . . . . . . . . . . .	L Near	 00000712 _TEXT	
+  else3  . . . . . . . . . . . .	L Near	 00000727 _TEXT	
+  endif3 . . . . . . . . . . . .	L Near	 00000731 _TEXT	
+  NoHit  . . . . . . . . . . . .	L Near	 0000076F _TEXT	
+  foodNotGobbled . . . . . . . .	L Near	 000007BD _TEXT	
+MsgBoxAsk  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+MsgBox . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+OpenInputFile  . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Paint  . . . . . . . . . . . . .	P Near	 0000087F _TEXT	Length= 00000080 Public STDCALL
+  loop1  . . . . . . . . . . . .	L Near	 0000088F _TEXT	
+  loop2  . . . . . . . . . . . .	L Near	 00000896 _TEXT	
+  printWall  . . . . . . . . . .	L Near	 000008D7 _TEXT	
+  NoPrint  . . . . . . . . . . .	L Near	 000008F2 _TEXT	
+  endLoop2 . . . . . . . . . . .	L Near	 000008F6 _TEXT	
+  endLoop1 . . . . . . . . . . .	L Near	 000008FA _TEXT	
+ParseDecimal32 . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ParseInteger32 . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+PeekConsoleInputA  . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Random32 . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+RandomRange  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Randomize  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadChar . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadConsoleA . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadConsoleInputA  . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadDec  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadFile . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadFloat  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadFromFile . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadHex  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadInt  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadKeyFlush . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadKey  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadString . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleCursorInfo . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleCursorPosition . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleMode . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleScreenBufferSize . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleTextAttribute  . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleTitleA . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleWindowInfo . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetFilePointer . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetLocalTime . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetTextColor . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ShowFPUStack . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Sleep  . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+StrLength  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_compare  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_copy . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_length . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_trim . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_ucase  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SystemTimeToFileTime . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WaitMsg  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteBinB  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteBin . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteChar  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteConsoleA  . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteConsoleOutputAttribute  . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteConsoleOutputCharacterA . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteDec . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteFile  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteFloat . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteHexB  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteHex . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteInt . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteStackFrameName  . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteStackFrame  . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteString  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteToFile  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteWindowsMsg  . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+accessIndex  . . . . . . . . . .	P Near	 0000082B _TEXT	Length= 00000029 Public STDCALL
+clearMem . . . . . . . . . . . .	P Near	 00000243 _TEXT	Length= 0000006C Public STDCALL
+  rowLoop  . . . . . . . . . . .	L Near	 00000249 _TEXT	
+  columnLoop . . . . . . . . . .	L Near	 00000250 _TEXT	
+  endColumnLoop  . . . . . . . .	L Near	 0000025E _TEXT	
+  endRowLoop . . . . . . . . . .	L Near	 00000262 _TEXT	
+createFood . . . . . . . . . . .	P Near	 000007DF _TEXT	Length= 0000004C Public STDCALL
+  redo . . . . . . . . . . . . .	L Near	 000007E2 _TEXT	
+generateLevel  . . . . . . . . .	P Near	 000008FF _TEXT	Length= 00000040 Public STDCALL
+  izlaz  . . . . . . . . . . . .	L Near	 00000903 _TEXT	
+  nextL  . . . . . . . . . . . .	L Near	 00000904 _TEXT	
+  rLoop  . . . . . . . . . . . .	L Near	 0000090E _TEXT	
+  endRLoop . . . . . . . . . . .	L Near	 00000925 _TEXT	
+  cLoop  . . . . . . . . . . . .	L Near	 00000927 _TEXT	
+  endCLoop . . . . . . . . . . .	L Near	 0000093E _TEXT	
+initSnake  . . . . . . . . . . .	P Near	 0000020A _TEXT	Length= 00000039 Public STDCALL
+main . . . . . . . . . . . . . .	P Near	 00000000 _TEXT	Length= 00000169 Public STDCALL
+  menu . . . . . . . . . . . . .	L Near	 0000005C _TEXT	
+  welcomeLoop  . . . . . . . . .	L Near	 0000007F _TEXT	
+  level  . . . . . . . . . . . .	L Near	 0000009B _TEXT	
+  loopLevel  . . . . . . . . . .	L Near	 000000AA _TEXT	
+  levelBeskonacno  . . . . . . .	L Near	 000000B9 _TEXT	
+  levelKutija  . . . . . . . . .	L Near	 000000C7 _TEXT	
+  speed  . . . . . . . . . . . .	L Near	 000000D5 _TEXT	
+  loopSpeed  . . . . . . . . . .	L Near	 000000E4 _TEXT	
+  speed1 . . . . . . . . . . . .	L Near	 000000FB _TEXT	
+  speed2 . . . . . . . . . . . .	L Near	 0000010A _TEXT	
+  speed3 . . . . . . . . . . . .	L Near	 00000119 _TEXT	
+  speed4 . . . . . . . . . . . .	L Near	 00000128 _TEXT	
+  initializeGame . . . . . . . .	L Near	 00000137 _TEXT	
+printf . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External C
+saveIndex  . . . . . . . . . . .	P Near	 00000854 _TEXT	Length= 0000002B Public STDCALL
+scanf  . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External C
+startGame  . . . . . . . . . . .	P Near	 000002AF _TEXT	Length= 00000195 Public STDCALL
+  mainGameLoop . . . . . . . . .	L Near	 0000030F _TEXT	
+  handleHorMovement  . . . . . .	L Near	 00000380 _TEXT	
+  handleHorMovement1 . . . . . .	L Near	 0000038C _TEXT	
+  handleHorMovement2 . . . . . .	L Near	 00000398 _TEXT	
+  handleVerMovement  . . . . . .	L Near	 000003A4 _TEXT	
+  handleVerMovement1 . . . . . .	L Near	 000003B3 _TEXT	
+  handleVerMovement2 . . . . . .	L Near	 000003BF _TEXT	
+  done . . . . . . . . . . . . .	L Near	 000003CB _TEXT	
+  quit . . . . . . . . . . . . .	L Near	 00000400 _TEXT	
+welcomeZmijica . . . . . . . . .	P Near	 00000169 _TEXT	Length= 000000A1 Public STDCALL
+wsprintfA  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External C
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 00000000h   
+@DataSize  . . . . . . . . . . .	Number	 00000000h   
+@Interface . . . . . . . . . . .	Number	 00000003h   
+@Model . . . . . . . . . . . . .	Number	 00000007h   
+@code  . . . . . . . . . . . . .	Text   	 _TEXT
+@data  . . . . . . . . . . . . .	Text   	 FLAT
+@fardata?  . . . . . . . . . . .	Text   	 FLAT
+@fardata . . . . . . . . . . . .	Text   	 FLAT
+@stack . . . . . . . . . . . . .	Text   	 FLAT
+ALT_MASK . . . . . . . . . . . .	Number	 00000003h   
+CAPSLOCK_ON  . . . . . . . . . .	Number	 00000080h   
+CREATE_ALWAYS  . . . . . . . . .	Number	 00000002h   
+CREATE_NEW . . . . . . . . . . .	Number	 00000001h   
+CTRL_MASK  . . . . . . . . . . .	Number	 0000000Ch   
+CreateFile . . . . . . . . . . .	Text   	 CreateFileA
+DOWN_KEY . . . . . . . . . . . .	Number	 00000028h   
+DO_NOT_SHARE . . . . . . . . . .	Number	 00000000h   
+ENABLE_ECHO_INPUT  . . . . . . .	Number	 00000004h   
+ENABLE_LINE_INPUT  . . . . . . .	Number	 00000002h   
+ENABLE_MOUSE_INPUT . . . . . . .	Number	 00000010h   
+ENABLE_PROCESSED_INPUT . . . . .	Number	 00000001h   
+ENABLE_PROCESSED_OUTPUT  . . . .	Number	 00000001h   
+ENABLE_WINDOW_INPUT  . . . . . .	Number	 00000008h   
+ENABLE_WRAP_AT_EOL_OUTPUT  . . .	Number	 00000002h   
+ENHANCED_KEY . . . . . . . . . .	Number	 00000100h   
+ESC_KEY  . . . . . . . . . . . .	Number	 0000001Bh   
+FALSE  . . . . . . . . . . . . .	Number	 00000000h   
+FILE_APPEND_DATA . . . . . . . .	Number	 00000004h   
+FILE_ATTRIBUTE_ARCHIVE . . . . .	Number	 00000020h   
+FILE_ATTRIBUTE_COMPRESSED  . . .	Number	 00000800h   
+FILE_ATTRIBUTE_DEVICE  . . . . .	Number	 00000040h   
+FILE_ATTRIBUTE_DIRECTORY . . . .	Number	 00000010h   
+FILE_ATTRIBUTE_ENCRYPTED . . . .	Number	 00004000h   
+FILE_ATTRIBUTE_HIDDEN  . . . . .	Number	 00000002h   
+FILE_ATTRIBUTE_NORMAL  . . . . .	Number	 00000080h   
+FILE_ATTRIBUTE_NOT_CONTENT_INDEXED .	Number	 00002000h   
+FILE_ATTRIBUTE_OFFLINE . . . . .	Number	 00001000h   
+FILE_ATTRIBUTE_READONLY  . . . .	Number	 00000001h   
+FILE_ATTRIBUTE_REPARSE_POINT . .	Number	 00000400h   
+FILE_ATTRIBUTE_SPARSE_FILE . . .	Number	 00000200h   
+FILE_ATTRIBUTE_SYSTEM  . . . . .	Number	 00000004h   
+FILE_ATTRIBUTE_TEMPORARY . . . .	Number	 00000100h   
+FILE_BEGIN . . . . . . . . . . .	Number	 00000000h   
+FILE_CURRENT . . . . . . . . . .	Number	 00000001h   
+FILE_DELETE_CHILD  . . . . . . .	Number	 00000040h   
+FILE_END . . . . . . . . . . . .	Number	 00000002h   
+FILE_READ_DATA . . . . . . . . .	Number	 00000001h   
+FILE_SHARE_DELETE  . . . . . . .	Number	 00000004h   
+FILE_SHARE_READ  . . . . . . . .	Number	 00000001h   
+FILE_SHARE_WRITE . . . . . . . .	Number	 00000002h   
+FILE_WRITE_DATA  . . . . . . . .	Number	 00000002h   
+FOCUS_EVENT  . . . . . . . . . .	Number	 00000010h   
+FORMAT_MESSAGE_ALLOCATE_BUFFER .	Number	 00000100h   
+FORMAT_MESSAGE_FROM_SYSTEM . . .	Number	 00001000h   
+FormatMessage  . . . . . . . . .	Text   	 FormatMessageA
+GENERIC_ALL  . . . . . . . . . .	Number	 10000000h   
+GENERIC_EXECUTE  . . . . . . . .	Number	 20000000h   
+GENERIC_READ . . . . . . . . . .	Number	 -80000000h   
+GENERIC_WRITE  . . . . . . . . .	Number	 40000000h   
+GetCommandLine . . . . . . . . .	Text   	 GetCommandLineA
+HANDLE . . . . . . . . . . . . .	Text   	 DWORD
+HEAP_GENERATE_EXCEPTIONS . . . .	Number	 00000004h   
+HEAP_GROWABLE  . . . . . . . . .	Number	 00000002h   
+HEAP_NO_SERIALIZE  . . . . . . .	Number	 00000001h   
+HEAP_REALLOC_IN_PLACE_ONLY . . .	Number	 00000010h   
+HEAP_ZERO_MEMORY . . . . . . . .	Number	 00000008h   
+IDABORT  . . . . . . . . . . . .	Number	 00000003h   
+IDCANCEL . . . . . . . . . . . .	Number	 00000002h   
+IDCLOSE  . . . . . . . . . . . .	Number	 00000008h   
+IDCONTINUE . . . . . . . . . . .	Number	 0000000Bh   
+IDHELP . . . . . . . . . . . . .	Number	 00000009h   
+IDIGNORE . . . . . . . . . . . .	Number	 00000005h   
+IDNO . . . . . . . . . . . . . .	Number	 00000007h   
+IDOK . . . . . . . . . . . . . .	Number	 00000001h   
+IDRETRY  . . . . . . . . . . . .	Number	 00000004h   
+IDTIMEOUT  . . . . . . . . . . .	Number	 00007D00h   
+IDTRYAGAIN . . . . . . . . . . .	Number	 0000000Ah   
+IDYES  . . . . . . . . . . . . .	Number	 00000006h   
+INVALID_HANDLE_VALUE . . . . . .	Number	 -00000001h   
+KBDOWN_FLAG  . . . . . . . . . .	Number	 00000001h   
+KEY_EVENT  . . . . . . . . . . .	Number	 00000001h   
+KEY_MASKS  . . . . . . . . . . .	Number	 0000001Fh   
+LEFT_ALT_PRESSED . . . . . . . .	Number	 00000002h   
+LEFT_CTRL_PRESSED  . . . . . . .	Number	 00000008h   
+LEFT_KEY . . . . . . . . . . . .	Number	 00000025h   
+MB_ABORTRETRYIGNORE  . . . . . .	Number	 00000002h   
+MB_APPLMODAL . . . . . . . . . .	Number	 00000000h   
+MB_CANCELTRYCONTINUE . . . . . .	Number	 00000006h   
+MB_DEFBUTTON1  . . . . . . . . .	Number	 00000000h   
+MB_DEFBUTTON2  . . . . . . . . .	Number	 00000100h   
+MB_DEFBUTTON3  . . . . . . . . .	Number	 00000200h   
+MB_DEFBUTTON4  . . . . . . . . .	Number	 00000300h   
+MB_HELP  . . . . . . . . . . . .	Number	 00004000h   
+MB_ICONASTERISK  . . . . . . . .	Number	 00000040h   
+MB_ICONERROR . . . . . . . . . .	Number	 00000010h   
+MB_ICONEXCLAMATION . . . . . . .	Number	 00000030h   
+MB_ICONHAND  . . . . . . . . . .	Number	 00000010h   
+MB_ICONINFORMATION . . . . . . .	Number	 00000040h   
+MB_ICONQUESTION  . . . . . . . .	Number	 00000020h   
+MB_ICONSTOP  . . . . . . . . . .	Number	 00000010h   
+MB_ICONWARNING . . . . . . . . .	Number	 00000030h   
+MB_OKCANCEL  . . . . . . . . . .	Number	 00000001h   
+MB_OK  . . . . . . . . . . . . .	Number	 00000000h   
+MB_RETRYCANCEL . . . . . . . . .	Number	 00000005h   
+MB_SYSTEMMODAL . . . . . . . . .	Number	 00001000h   
+MB_TASKMODAL . . . . . . . . . .	Number	 00002000h   
+MB_USERICON  . . . . . . . . . .	Number	 00000080h   
+MB_YESNOCANCEL . . . . . . . . .	Number	 00000003h   
+MB_YESNO . . . . . . . . . . . .	Number	 00000004h   
+MENU_EVENT . . . . . . . . . . .	Number	 00000008h   
+MOUSE_EVENT  . . . . . . . . . .	Number	 00000002h   
+MessageBox . . . . . . . . . . .	Text   	 MessageBoxA
+NULL . . . . . . . . . . . . . .	Number	 00000000h   
+NUMLOCK_ON . . . . . . . . . . .	Number	 00000020h   
+OPEN_ALWAYS  . . . . . . . . . .	Number	 00000004h   
+OPEN_EXISTING  . . . . . . . . .	Number	 00000003h   
+PeekConsoleInput . . . . . . . .	Text   	 PeekConsoleInputA
+RIGHT_ALT_PRESSED  . . . . . . .	Number	 00000001h   
+RIGHT_CTRL_PRESSED . . . . . . .	Number	 00000004h   
+RIGHT_KEY  . . . . . . . . . . .	Number	 00000027h   
+ReadConsoleInput . . . . . . . .	Text   	 ReadConsoleInputA
+ReadConsole  . . . . . . . . . .	Text   	 ReadConsoleA
+SCROLLLOCK_ON  . . . . . . . . .	Number	 00000040h   
+SHIFT_MASK . . . . . . . . . . .	Number	 00000010h   
+SHIFT_PRESSED  . . . . . . . . .	Number	 00000010h   
+STD_ERROR_HANDLE . . . . . . . .	Number	 -0000000Ch   
+STD_INPUT_HANDLE . . . . . . . .	Number	 -0000000Ah   
+STD_OUTPUT_HANDLE  . . . . . . .	Number	 -0000000Bh   
+SetConsoleTitle  . . . . . . . .	Text   	 SetConsoleTitleA
+T1 . . . . . . . . . . . . . . .	Byte	 00000000 _DATA	
+T2 . . . . . . . . . . . . . . .	Byte	 00000036 _DATA	
+T3 . . . . . . . . . . . . . . .	Byte	 0000006C _DATA	
+T4 . . . . . . . . . . . . . . .	Byte	 000000A2 _DATA	
+T5 . . . . . . . . . . . . . . .	Byte	 000000D8 _DATA	
+T6 . . . . . . . . . . . . . . .	Byte	 0000010E _DATA	
+T7 . . . . . . . . . . . . . . .	Byte	 00000144 _DATA	
+T8 . . . . . . . . . . . . . . .	Byte	 0000017A _DATA	
+TAB  . . . . . . . . . . . . . .	Number	 00000009h   
+TRUE . . . . . . . . . . . . . .	Number	 00000001h   
+TRUNCATE_EXISTING  . . . . . . .	Number	 00000005h   
+UP_KEY . . . . . . . . . . . . .	Number	 00000026h   
+VK_11  . . . . . . . . . . . . .	Number	 000000BDh   
+VK_12  . . . . . . . . . . . . .	Number	 000000BBh   
+VK_ADD . . . . . . . . . . . . .	Number	 0000006Bh   
+VK_BACK  . . . . . . . . . . . .	Number	 00000008h   
+VK_CANCEL  . . . . . . . . . . .	Number	 00000003h   
+VK_CAPITAL . . . . . . . . . . .	Number	 00000014h   
+VK_CLEAR . . . . . . . . . . . .	Number	 0000000Ch   
+VK_CONTROL . . . . . . . . . . .	Number	 00000011h   
+VK_DECIMAL . . . . . . . . . . .	Number	 0000006Eh   
+VK_DELETE  . . . . . . . . . . .	Number	 0000002Eh   
+VK_DIVIDE  . . . . . . . . . . .	Number	 0000006Fh   
+VK_DOWN  . . . . . . . . . . . .	Number	 00000028h   
+VK_END . . . . . . . . . . . . .	Number	 00000023h   
+VK_ESCAPE  . . . . . . . . . . .	Number	 0000001Bh   
+VK_EXECUTE . . . . . . . . . . .	Number	 0000002Bh   
+VK_F10 . . . . . . . . . . . . .	Number	 00000079h   
+VK_F11 . . . . . . . . . . . . .	Number	 0000007Ah   
+VK_F12 . . . . . . . . . . . . .	Number	 0000007Bh   
+VK_F13 . . . . . . . . . . . . .	Number	 0000007Ch   
+VK_F14 . . . . . . . . . . . . .	Number	 0000007Dh   
+VK_F15 . . . . . . . . . . . . .	Number	 0000007Eh   
+VK_F16 . . . . . . . . . . . . .	Number	 0000007Fh   
+VK_F17 . . . . . . . . . . . . .	Number	 00000080h   
+VK_F18 . . . . . . . . . . . . .	Number	 00000081h   
+VK_F19 . . . . . . . . . . . . .	Number	 00000082h   
+VK_F1  . . . . . . . . . . . . .	Number	 00000070h   
+VK_F20 . . . . . . . . . . . . .	Number	 00000083h   
+VK_F21 . . . . . . . . . . . . .	Number	 00000084h   
+VK_F22 . . . . . . . . . . . . .	Number	 00000085h   
+VK_F23 . . . . . . . . . . . . .	Number	 00000086h   
+VK_F24 . . . . . . . . . . . . .	Number	 00000087h   
+VK_F2  . . . . . . . . . . . . .	Number	 00000071h   
+VK_F3  . . . . . . . . . . . . .	Number	 00000072h   
+VK_F4  . . . . . . . . . . . . .	Number	 00000073h   
+VK_F5  . . . . . . . . . . . . .	Number	 00000074h   
+VK_F6  . . . . . . . . . . . . .	Number	 00000075h   
+VK_F7  . . . . . . . . . . . . .	Number	 00000076h   
+VK_F8  . . . . . . . . . . . . .	Number	 00000077h   
+VK_F9  . . . . . . . . . . . . .	Number	 00000078h   
+VK_HELP  . . . . . . . . . . . .	Number	 0000002Fh   
+VK_HOME  . . . . . . . . . . . .	Number	 00000024h   
+VK_INSERT  . . . . . . . . . . .	Number	 0000002Dh   
+VK_LBUTTON . . . . . . . . . . .	Number	 00000001h   
+VK_LCONTROL  . . . . . . . . . .	Number	 000000A2h   
+VK_LEFT  . . . . . . . . . . . .	Number	 00000025h   
+VK_LMENU . . . . . . . . . . . .	Number	 000000A4h   
+VK_LSHIFT  . . . . . . . . . . .	Number	 000000A0h   
+VK_MENU  . . . . . . . . . . . .	Number	 00000012h   
+VK_MULTIPLY  . . . . . . . . . .	Number	 0000006Ah   
+VK_NEXT  . . . . . . . . . . . .	Number	 00000022h   
+VK_NUMLOCK . . . . . . . . . . .	Number	 00000090h   
+VK_NUMPAD0 . . . . . . . . . . .	Number	 00000060h   
+VK_NUMPAD1 . . . . . . . . . . .	Number	 00000061h   
+VK_NUMPAD2 . . . . . . . . . . .	Number	 00000062h   
+VK_NUMPAD3 . . . . . . . . . . .	Number	 00000063h   
+VK_NUMPAD4 . . . . . . . . . . .	Number	 00000064h   
+VK_NUMPAD5 . . . . . . . . . . .	Number	 00000065h   
+VK_NUMPAD6 . . . . . . . . . . .	Number	 00000066h   
+VK_NUMPAD7 . . . . . . . . . . .	Number	 00000067h   
+VK_NUMPAD8 . . . . . . . . . . .	Number	 00000068h   
+VK_NUMPAD9 . . . . . . . . . . .	Number	 00000069h   
+VK_PAUSE . . . . . . . . . . . .	Number	 00000013h   
+VK_PRINT . . . . . . . . . . . .	Number	 0000002Ah   
+VK_PRIOR . . . . . . . . . . . .	Number	 00000021h   
+VK_RBUTTON . . . . . . . . . . .	Number	 00000002h   
+VK_RCONTROL  . . . . . . . . . .	Number	 000000A3h   
+VK_RETURN  . . . . . . . . . . .	Number	 0000000Dh   
+VK_RIGHT . . . . . . . . . . . .	Number	 00000027h   
+VK_RMENU . . . . . . . . . . . .	Number	 000000A5h   
+VK_RSHIFT  . . . . . . . . . . .	Number	 000000A1h   
+VK_SCROLL  . . . . . . . . . . .	Number	 00000091h   
+VK_SEPARATER . . . . . . . . . .	Number	 0000006Ch   
+VK_SHIFT . . . . . . . . . . . .	Number	 00000010h   
+VK_SNAPSHOT  . . . . . . . . . .	Number	 0000002Ch   
+VK_SPACE . . . . . . . . . . . .	Number	 00000020h   
+VK_SUBTRACT  . . . . . . . . . .	Number	 0000006Dh   
+VK_TAB . . . . . . . . . . . . .	Number	 00000009h   
+VK_UP  . . . . . . . . . . . . .	Number	 00000026h   
+WINDOW_BUFFER_SIZE_EVENT . . . .	Number	 00000004h   
+WriteConsoleOutputCharacter  . .	Text   	 WriteConsoleOutputCharacterA
+WriteConsole . . . . . . . . . .	Text   	 WriteConsoleA
+Xleft  . . . . . . . . . . . . .	Byte	 0000121D _DATA	
+Xright . . . . . . . . . . . . .	Byte	 0000121F _DATA	
+Yabove . . . . . . . . . . . . .	Byte	 0000121C _DATA	
+Ybelow . . . . . . . . . . . . .	Byte	 0000121E _DATA	
+bRead  . . . . . . . . . . . . .	DWord	 0000001C _BSS	
+black  . . . . . . . . . . . . .	Number	 00000000h   
+blue . . . . . . . . . . . . . .	Number	 00000001h   
+brown  . . . . . . . . . . . . .	Number	 00000006h   
+copyright  . . . . . . . . . . .	Byte	 000001E0 _DATA	
+currDirection  . . . . . . . . .	Byte	 00001214 _DATA	
+cursorInfo . . . . . . . . . . .	CONSOLE_CURSOR_INFO  0000123C _DATA	
+cyan . . . . . . . . . . . . . .	Number	 00000003h   
+direction_default  . . . . . . .	Number	 00000052h   
+exit . . . . . . . . . . . . . .	Text   	 INVOKE ExitProcess,0
+flag_endTheGame  . . . . . . . .	Byte	 00001223 _DATA	
+flag_tail  . . . . . . . . . . .	Byte	 00001220 _DATA	
+foodX  . . . . . . . . . . . . .	Byte	 00001213 _DATA	
+foodY  . . . . . . . . . . . . .	Byte	 00001212 _DATA	
+frameBuffer  . . . . . . . . . .	Word	 0000030E _DATA	
+gameOverString . . . . . . . . .	Byte	 000002E1 _DATA	
+gray . . . . . . . . . . . . . .	Number	 00000008h   
+green  . . . . . . . . . . . . .	Number	 00000002h   
+headX_default  . . . . . . . . .	Number	 00000028h   
+headX  . . . . . . . . . . . . .	Byte	 0000120F _DATA	
+headY_default  . . . . . . . . .	Number	 0000000Ch   
+headY  . . . . . . . . . . . . .	Byte	 0000120E _DATA	
+levelString  . . . . . . . . . .	Byte	 0000024F _DATA	
+lightBlue  . . . . . . . . . . .	Number	 00000009h   
+lightCyan  . . . . . . . . . . .	Number	 0000000Bh   
+lightGray  . . . . . . . . . . .	Number	 00000007h   
+lightGreen . . . . . . . . . . .	Number	 0000000Ah   
+lightMagenta . . . . . . . . . .	Number	 0000000Dh   
+lightRed . . . . . . . . . . . .	Number	 0000000Ch   
+magenta  . . . . . . . . . . . .	Number	 00000005h   
+newDirection . . . . . . . . . .	Byte	 00001215 _DATA	
+numInp . . . . . . . . . . . . .	DWord	 00000008 _BSS	
+playerScore  . . . . . . . . . .	DWord	 00001224 _DATA	
+red  . . . . . . . . . . . . . .	Number	 00000004h   
+scoreString  . . . . . . . . . .	Byte	 000002EC _DATA	
+search . . . . . . . . . . . . .	Word	 00001221 _DATA	
+snakeSpeed . . . . . . . . . . .	DWord	 00001216 _DATA	
+speedString  . . . . . . . . . .	Byte	 0000028F _DATA	
+stdInHandle  . . . . . . . . . .	DWord	 00000004 _BSS	
+stdOutHandle . . . . . . . . . .	DWord	 00000000 _BSS	
+tailX_default  . . . . . . . . .	Number	 00000025h   
+tailX  . . . . . . . . . . . . .	Byte	 00001211 _DATA	
+tailY_default  . . . . . . . . .	Number	 0000000Ch   
+tailY  . . . . . . . . . . . . .	Byte	 00001210 _DATA	
+tempX  . . . . . . . . . . . . .	Byte	 0000121B _DATA	
+tempY  . . . . . . . . . . . . .	Byte	 0000121A _DATA	
+temp . . . . . . . . . . . . . .	Byte	 0000000C _BSS	
+welcomeDelay . . . . . . . . . .	DWord	 00001228 _DATA	
+welcomeString  . . . . . . . . .	Byte	 000001B0 _DATA	
+white  . . . . . . . . . . . . .	Number	 0000000Fh   
+winTitle . . . . . . . . . . . .	Byte	 00001234 _DATA	
+windowRect . . . . . . . . . . .	SMALL_RECT  0000122C _DATA	
+wsprintf . . . . . . . . . . . .	Text   	 wsprintfA
+xmax . . . . . . . . . . . . . .	Number	 0000004Fh   
+xmin . . . . . . . . . . . . . .	Number	 00000000h   
+yellow . . . . . . . . . . . . .	Number	 0000000Eh   
+ymax . . . . . . . . . . . . . .	Number	 00000018h   
+ymin . . . . . . . . . . . . . .	Number	 00000000h   
+yourScoreString  . . . . . . . .	Byte	 000002F5 _DATA	
+
+	   1 Warnings
+	   0 Errors
